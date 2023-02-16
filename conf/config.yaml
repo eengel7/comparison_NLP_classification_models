@@ -1,0 +1,4 @@
+---
+defaults:
+  - run_mode: data # data, classifier , generate, eval_bias
+
