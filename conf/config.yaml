@@ -5,3 +5,4 @@ defaults:
 
 # paths:
   
+random_seed: 42
