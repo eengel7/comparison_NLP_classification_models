@@ -2,12 +2,13 @@ import os
 import pickle
 from abc import ABC, abstractmethod
 
-from omegaconf import DictConfig
-
-from typing import DataFrame
 import hydra
-import numpy as np
 import pandas as pd
+from omegaconf import DictConfig
+from typing import Any
+from src.preprocessing.tokenizer import SimpleTokenizer
+from src.preprocessing.vectorizer import BowVectorizer
+from sklearn.model_selection import train_test_split
 
 class Preprocessor(ABC):
     def __init__(self, cfg: DictConfig):
@@ -17,73 +18,107 @@ class Preprocessor(ABC):
     def preprocess_and_store(self):
         pass
 
-    def load_dataframe(self):
-        df = pd.read_csv(hydra.utils.to_absolute_path(self.cfg.run_mode.paths.raw_data))
+    def load_classifications(self) -> pd.DataFrame:
+        df_classifications = pd.read_excel(hydra.utils.to_absolute_path(self.cfg.run_mode.paths.classifications),  index_col=0)
+
+        # Normalise labels
+        df_classifications['Label_En'] = df_classifications['Label_En'].apply(lambda x: x.strip().lower())
+
+        return df_classifications
+    
+    def get_matching_SCB_classification_ID(self, research_fields: str, df_classifications: pd.DataFrame) -> str:
+        # retrieve unique ID for classification of data'
+
+        if isinstance(research_fields, str):
+            research_fields = research_fields.split(', ')   #TODO: need to take care of single classifications that contain comma
+
+            # Get unique research fields and normalise strings
+            research_fields = list({x.lower().strip() for x in research_fields if x})
+            
+            # Match research field with given SCB classification and return classification with specific level, i.e. number of digits
+            for field in research_fields:
+                classification_id = df_classifications.index[df_classifications['Label_En'] == field][0]
+            
+                level_of_classification = len(str(classification_id))
+                if level_of_classification == self.cfg.run_mode.digits:
+                    return classification_id
+                else:
+                    print(f"No matching classification found for {research_fields}.")
+                    return None
+                
+        else:
+            return None
+
+
+    def load_dataframe(self) -> pd.DataFrame:
+        use_columns = ['Title En', 'Description En', 'Research fields']
+        df = pd.read_excel(hydra.utils.to_absolute_path(self.cfg.run_mode.paths.raw_data), usecols = use_columns)
+        print('Raw data is loaded.')
         return df
 
-    def get_x_y_texts(self, df: DataFrame):
-        x = df[self.cfg.pre_processing.token_type]
-        texts = df[self.cfg.text_col]
-        return x, y, texts
+    def filter_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
 
-    def store_data(self, data, dest_dir, file_name):
-        dest_dir = hydra.utils.to_absolute_path(dest_dir)
-        os.makedirs(dest_dir, exist_ok=True)
-        pickle.dump(data, open(os.path.join(dest_dir, file_name), "wb"))
-        print(f"Saved {file_name} at {dest_dir}.")
+        # Remove nan
+        df = df.dropna().reset_index(drop=True)
+
+        # Remove noise from data
+        df['Description En'] = df['Description En'].apply(lambda x: x.replace('Purpose and goal: ','' ))
+
+        # Remove unclassified data
+        df = df[df['Research fields'] != 'Unclassified']
+
+        return df
+
+    def split_data(self, df: pd.DataFrame) -> list[pd.DataFrame]:
+        test_size = self.cfg.run_mode.test_size
+
+        X_train, X_test, Y_train, Y_test  = train_test_split(
+            df['Description En'],
+            df['Research fields'],
+            test_size = test_size,
+            shuffle = True,
+            stratify = df['Research fields'],
+            random_state = 42,
+        )
+
+        return X_train, X_test, Y_train, Y_test
+
+    def store_data(self, data: Any, file_name: str):
+        dest = self.cfg.run_mode.paths.preprocessed_path
+        os.makedirs(dest, exist_ok=True)
+
+        dest = hydra.utils.to_absolute_path(dest)
+        #TODO add to check whether data exists or not 
+
+        file = os.path.join(dest, f"{file_name}.pkl") 
+        if not os.path.isfile(file):
+            pickle.dump(data, open(file, "wb"))
+            print(f"Saved {file_name} at {dest}.")
+        else:
+            print(f"{file_name} already exists at {dest}.")
 
 class LogRegPreprocessor(Preprocessor):
-    def __init__(self):
-        path_to_tfidf = hydra.utils.to_absolute_path(self.cfg.run_mode.paths.tfidf_weights)
-
-        self.tfidf_weights = np.load(
-            os.path.join(path_to_tfidf, "word2weight_idf.npy"), allow_pickle=True
-        ).item()
-        assert isinstance(self.tfidf_weights, dict)
-
-        self.max_idf = np.load(
-            os.path.join(path_to_tfidf, "max_idf.npy"),
-            allow_pickle=True,
-        )
 
     def preprocess_and_store(self):
+
+        # Prepare data
         df = self.load_dataframe()
-        if self.cfg.run_mode.augment:
-            df = replace_with_gendered_pronouns(self.cfg.run_mode.augment, self.cfg.text_col, df)
-        df = self.basic_tokenize(df)
-        model = get_embedding(self.cfg)
-        vectorizer = self.get_vectorizer(model)
+        df = self.filter_dataframe(df)
+        simple_tokenizer = SimpleTokenizer(remove_stopwords =  self.cfg.run_mode.tokenize.remove_stopwords, apply_stemming =  self.cfg.run_mode.tokenize.apply_stemming) 
+        df['Description En'] = simple_tokenizer(df['Description En'])
 
-        dev_set, test_set = get_dev_test_sets(self.cfg, self.cfg.label_col, df)
-        for split_df, split_name in zip([dev_set, test_set], ["dev_split", "test_split"]):
-            x, y, texts = self.get_x_y_texts(split_df)
-            x = vectorizer.transform(x)
-            self.store_data(
-                {"X": x, "Y": y, "texts": texts},
-                get_data_dir(self.cfg),
-                split_name,
-            )
+        # Load SCB classifications and retrieve unique label for data
+        df_classifications = self.load_classifications()
+        df['Research fields'] = df['Research fields'].apply(lambda x: self.get_matching_SCB_classification_ID(x, df_classifications)) 
+        print(df)
 
-    def basic_tokenize(self, df):
-        sgt = SimpleTokenizer(
-            ("german" if self.cfg.language == "GER" else "english"),
-            self.cfg.run_mode.tokenize.to_lower,
-            self.cfg.run_mode.tokenize.remove_punctuation,
-        )
-        # tokenize
-        df = sgt.tokenize(df, text_col=self.cfg.text_col)
-        return df
+        # Split data
+        X_train, X_test, Y_train, Y_test = self.split_data(df)
 
-    def get_vectorizer(self, model):
-        if self.cfg.pre_processing.mean:
-            vectorizer = MeanEmbeddingVectorizer(
-                model, self.tfidf_weights, max_idf=self.max_idf
-            )
-        else:
-            vectorizer = WordEmbeddingVectorizer(
-                model,
-                self.tfidf_weights,
-                max_idf=self.max_idf,
-                seq_length=self.cfg.pre_processing.seq_length,
-            )
-        return         
+        # Vectorize tokens based on BOW embedding 
+        vectorizer = BowVectorizer()
+        X_train_bow = vectorizer.fit_transform(X_train) 
+        X_test_bow = vectorizer.transform(X_test)
+
+        for data, file_name in zip([X_train_bow, X_test_bow, Y_train, Y_test ], ["X_train", "X_test", "Y_train", "Y_test"]):
+            self.store_data(data, file_name)
