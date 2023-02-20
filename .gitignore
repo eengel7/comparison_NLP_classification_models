@@ -131,3 +131,4 @@ dmypy.json
 # Hydra ouput
 outputs/
 
+.DS_Store
