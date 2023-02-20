@@ -1,4 +1,7 @@
----
 defaults:
-  - run_mode: data # data, classifier , generate, eval_bias
+  - model: logistic_regression
+  - run_mode: training # preprocess, train 
 
+
+# paths:
+  
