@@ -22,7 +22,7 @@ tokenize:
   apply_stemming: True
 
 # SCB classifications 
-digits: 1   # Alternatives: 3,5        Number of digits indicating the level of classification
+digits: 3   # Alternatives: 3,5        Number of digits indicating the level of classification
 
 test_size: 0.20 
 

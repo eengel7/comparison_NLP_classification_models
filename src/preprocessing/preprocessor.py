@@ -26,28 +26,57 @@ class Preprocessor(ABC):
 
         return df_classifications
     
-    def get_matching_SCB_classification_ID(self, research_fields: str, df_classifications: pd.DataFrame) -> str:
-        # retrieve unique ID for classification of data'
+    # def get_matching_SCB_classification_ID(self, research_fields: str, df_classifications: pd.DataFrame) -> str:
+    #     # retrieve unique ID for classification of data'
 
-        if isinstance(research_fields, str):
-            research_fields = research_fields.split(', ')   #TODO: need to take care of single classifications that contain comma
+    #     if isinstance(research_fields, str):
+    #         research_fields = research_fields.split(', ')   #TODO: need to take care of single classifications that contain comma
 
-            # Get unique research fields and normalise strings
-            research_fields = list({x.lower().strip() for x in research_fields if x})
+    #         # Get unique research fields and normalise strings
+    #         research_fields = list({x.lower().strip() for x in research_fields if x})
             
+    #         # Match research field with given SCB classification and return classification with specific level, i.e. number of digits
+    #         for field in research_fields:
+    #             classification_id = df_classifications.index[df_classifications['Label_En'] == field][0]
+            
+    #             level_of_classification = len(str(classification_id))
+                
+    #             if level_of_classification == self.cfg.run_mode.digits:
+    #                 return classification_id
+    #             else:
+    #                 print(f"No matching classification found for {research_fields}.")
+    #                 return None
+                
+    #     else:
+    #         return None
+    
+    def get_matching_SCB_class_IDs(self, research_fields: str, df_classifications: pd.DataFrame) -> list[int]:
+        # retrieve class ID for all research fields'
+        
+        if isinstance(research_fields, str):
+            research_fields = research_fields.split('; ')  
+            
+            # Get unique research fields and normalise strings
+            research_fields = list({" ".join(x.lower().strip().split()) for x in research_fields if x})
+            
+            class_IDs = list()
             # Match research field with given SCB classification and return classification with specific level, i.e. number of digits
             for field in research_fields:
-                classification_id = df_classifications.index[df_classifications['Label_En'] == field][0]
-            
-                level_of_classification = len(str(classification_id))
-                if level_of_classification == self.cfg.run_mode.digits:
-                    return classification_id
-                else:
-                    print(f"No matching classification found for {research_fields}.")
-                    return None
                 
+                class_id = df_classifications.index[df_classifications['Label_En'] == field][:] 
+                if not class_id.empty:
+                    class_IDs.extend(class_id.values[:])
+                else:
+                    print(f"No matching classification found for {field}.")
+    
+            return class_IDs
         else:
+            print(f"{research_fields} is not a string.")
             return None
+    
+    def filter_IDs(self, IDs: list[int]) -> list[int]:
+        # select IDs depending on the provided classification level 
+        return [id for id in IDs if len(str(id)) == self.cfg.run_mode.digits]
 
 
     def load_dataframe(self) -> pd.DataFrame:
@@ -71,31 +100,35 @@ class Preprocessor(ABC):
 
     def split_data(self, df: pd.DataFrame) -> list[pd.DataFrame]:
         test_size = self.cfg.run_mode.test_size
+        print(df)
 
         X_train, X_test, Y_train, Y_test  = train_test_split(
             df['Description En'],
             df['Research fields'],
             test_size = test_size,
             shuffle = True,
-            stratify = df['Research fields'],
+            #stratify = df['Research fields'],
             random_state = 42,
         )
 
         return X_train, X_test, Y_train, Y_test
 
-    def store_data(self, data: Any, file_name: str):
+    def store_data(self, dataset_dict: dict):
         dest = self.cfg.run_mode.paths.preprocessed_path
         os.makedirs(dest, exist_ok=True)
 
         dest = hydra.utils.to_absolute_path(dest)
-        #TODO add to check whether data exists or not 
 
-        file = os.path.join(dest, f"{file_name}.pkl") 
+        # file_name = self.cfg.run_mode.paths.preprocessed_path
+
+        file = os.path.join(dest, f"preprocessed_data.pkl") 
         if not os.path.isfile(file):
-            pickle.dump(data, open(file, "wb"))
-            print(f"Saved {file_name} at {dest}.")
+
+            pickle.dump(dataset_dict, open(file, "wb"))
+            # pickle.dump(data, open(file, "wb"))
+            print(f"Saved preprocessed_data.pkl at {dest}.")
         else:
-            print(f"{file_name} already exists at {dest}.")
+            print(f"preprocessed_data.pkl already exists at {dest}.")
 
 class LogRegPreprocessor(Preprocessor):
 
@@ -109,7 +142,11 @@ class LogRegPreprocessor(Preprocessor):
 
         # Load SCB classifications and retrieve unique label for data
         df_classifications = self.load_classifications()
-        df['Research fields'] = df['Research fields'].apply(lambda x: self.get_matching_SCB_classification_ID(x, df_classifications)) 
+        df['Research fields'] = df['Research fields'].apply(lambda x: self.get_matching_SCB_class_IDs(x, df_classifications))
+
+        # Filter labels depending on  chosen level of classification (in config)
+        df['Research fields'] = df['Research fields'].apply(lambda x: self.filter_IDs(x)) 
+
         print(df)
 
         # Split data
@@ -117,8 +154,14 @@ class LogRegPreprocessor(Preprocessor):
 
         # Vectorize tokens based on BOW embedding 
         vectorizer = BowVectorizer()
-        X_train_bow = vectorizer.fit_transform(X_train) 
-        X_test_bow = vectorizer.transform(X_test)
+        X_train = vectorizer.fit_transform(X_train) 
+        X_test = vectorizer.transform(X_test)
 
-        for data, file_name in zip([X_train_bow, X_test_bow, Y_train, Y_test ], ["X_train", "X_test", "Y_train", "Y_test"]):
-            self.store_data(data, file_name)
+        dataset_dict = {"X_train": X_train, "X_test": X_test, "Y_train": Y_train, "Y_test": Y_test}
+
+        self.store_data(dataset_dict)
+
+        # with open('dataset_dict.pickle', 'wb') as file:
+        #     pickle.dump(dataset_dict, file)
+        # for data, file_name in zip([X_train_bow, X_test_bow, Y_train, Y_test ], ["X_train", "X_test", "Y_train", "Y_test"]):
+            

@@ -1,6 +1,6 @@
 defaults:
   - model: logistic_regression
-  - run_mode: training # preprocess, train 
+  - run_mode: preprocessing # preprocessing, training
 
 
 # paths:
