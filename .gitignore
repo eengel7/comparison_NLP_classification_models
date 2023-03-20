@@ -132,3 +132,6 @@ dmypy.json
 outputs/
 
 .DS_Store
+
+cache_dir
+events.*
