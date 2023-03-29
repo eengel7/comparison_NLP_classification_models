@@ -26,29 +26,6 @@ class Preprocessor(ABC):
 
         return df_classifications
     
-    # def get_matching_SCB_classification_ID(self, research_fields: str, df_classifications: pd.DataFrame) -> str:
-    #     # retrieve unique ID for classification of data'
-
-    #     if isinstance(research_fields, str):
-    #         research_fields = research_fields.split(', ')   #TODO: need to take care of single classifications that contain comma
-
-    #         # Get unique research fields and normalise strings
-    #         research_fields = list({x.lower().strip() for x in research_fields if x})
-            
-    #         # Match research field with given SCB classification and return classification with specific level, i.e. number of digits
-    #         for field in research_fields:
-    #             classification_id = df_classifications.index[df_classifications['Label_En'] == field][0]
-            
-    #             level_of_classification = len(str(classification_id))
-                
-    #             if level_of_classification == self.cfg.run_mode.digits:
-    #                 return classification_id
-    #             else:
-    #                 print(f"No matching classification found for {research_fields}.")
-    #                 return None
-                
-    #     else:
-    #         return None
     
     def get_matching_SCB_class_IDs(self, research_fields: str, df_classifications: pd.DataFrame) -> list[int]:
         # retrieve class ID for all research fields'

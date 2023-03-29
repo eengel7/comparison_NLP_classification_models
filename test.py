@@ -3,7 +3,8 @@ from src.classification import (
 )
 import pandas as pd
 import logging
-
+from src.training.training import train_model
+from src.training.evaluation import eval_model
 
 logging.basicConfig(level=logging.INFO)
 transformers_logger = logging.getLogger("transformers")
@@ -36,14 +37,14 @@ model = MultiLabelClassificationModel(
     "roberta",
     "roberta-base",
     num_labels=3,
-    args=model_args,
+    args=model_args
 )
 
 # Train the model
-model.train_model(train_df)
+train_model(model, train_df)
 
 # Evaluate the model
-result, model_outputs, wrong_predictions = model.eval_model(
+result, model_outputs, wrong_predictions = eval_model(model,
     eval_df
 )
 

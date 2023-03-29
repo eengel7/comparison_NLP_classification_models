@@ -1,0 +1,42 @@
+{
+    "os": "macOS-13.2.1-x86_64-i386-64bit",
+    "python": "3.9.6",
+    "heartbeatAt": "2023-03-23T19:54:39.314140",
+    "startedAt": "2023-03-23T19:54:39.105660",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "/Users/evaengel/comparison_NLP_classification_models/test.py",
+    "codePath": "test.py",
+    "git": {
+        "remote": "https://github.com/eengel7/comparison_NLP_classification_models.git",
+        "commit": "7b9634c0f461325c75e0ebf6bef214ed37fde7bd"
+    },
+    "email": "\u201ceengel7@icloud.com\u201d",
+    "root": "/Users/evaengel/comparison_NLP_classification_models",
+    "host": "Evas-MacBook-Pro.local",
+    "username": "evaengel",
+    "executable": "/Users/evaengel/comparison_NLP_classification_models/.venv/bin/python",
+    "cpu_count": 2,
+    "cpu_count_logical": 2,
+    "cpu_freq": {
+        "current": 2300,
+        "min": 2300,
+        "max": 2300
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 2300,
+            "min": 2300,
+            "max": 2300
+        }
+    ],
+    "disk": {
+        "total": 112.70698928833008,
+        "used": 8.327095031738281
+    },
+    "memory": {
+        "total": 8.0
+    }
+}

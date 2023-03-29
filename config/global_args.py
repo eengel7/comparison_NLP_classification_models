@@ -23,7 +23,7 @@ global_args = {
     "learning_rate": 4e-5,
     "local_rank": -1,
     "logging_steps": 50,
-    "manual_seed": None,
+    "manual_seed": 42,
     "max_grad_norm": 1.0,
     "max_seq_length": 128,
     "multiprocessing_chunksize": 500,
