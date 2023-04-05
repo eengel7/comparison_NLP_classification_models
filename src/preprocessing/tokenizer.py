@@ -1,10 +1,8 @@
 import nltk
 import pandas as pd
-from nltk.corpus import stopwords
-from nltk.stem.snowball import SnowballStemmer
+
 from nltk.tokenize import RegexpTokenizer
 
-nltk.download('stopwords')
 
 class SimpleTokenizer:
     """Simple tokenization including stemming and removing stop words. Used for logistic regression."""
@@ -26,10 +24,14 @@ class SimpleTokenizer:
 
         
         if self.remove_stopwords:
+            from nltk.corpus import stopwords
+            nltk.download('stopwords')
+
             stop = stopwords.words('english') 
             df_col = df_col.apply(lambda x: ' '.join([word for word in x if word not in stop]))
 
         if self.apply_stemming:
+            from nltk.stem.snowball import SnowballStemmer
             ss = SnowballStemmer("english")
             df_col = df_col.apply(lambda x: ' '.join([ss.stem(word) for word in x.split()]))
         

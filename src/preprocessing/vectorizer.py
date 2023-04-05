@@ -2,7 +2,6 @@
 from abc import ABC, abstractmethod
 
 import pandas as pd
-
 from sklearn.feature_extraction.text import CountVectorizer
 
 
