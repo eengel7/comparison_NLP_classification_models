@@ -37,7 +37,8 @@ model = MultiLabelClassificationModel(
     "roberta",
     "roberta-base",
     num_labels=3,
-    args=model_args
+    args=model_args,
+    
 )
 
 # Train the model
@@ -48,7 +49,7 @@ result, model_outputs, wrong_predictions = eval_model(model,
     eval_df
 )
 
-# Make predictions with the model
-predictions, raw_outputs = model.predict(["Sam"])
+# # Make predictions with the model
+# predictions, raw_outputs = model.predict(["Sam"])
 
-print(predictions,raw_outputs)
+# print(predictions,raw_outputs)
