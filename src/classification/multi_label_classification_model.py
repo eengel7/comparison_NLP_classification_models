@@ -45,7 +45,6 @@ from transformers import (
 )
 
 from src.classification import ClassificationModel
-from config.global_args import global_args
 from config.model_args import MultiLabelClassificationArgs
 from config.utils import sweep_config_to_sweep_values
 from src.custom_models.models import (
