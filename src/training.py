@@ -19,7 +19,6 @@ from transformers.optimization import (
     get_linear_schedule_with_warmup, get_polynomial_decay_schedule_with_warmup)
 
 from src.classification.classification_utils import (InputExample,
-                                                     LazyClassificationDataset,
                                                      flatten_results,
                                                      load_hf_dataset)
 try:
@@ -74,7 +73,7 @@ def train_model(
             )
 
         if not output_dir:
-            output_dir = classification_model.args.output_dir
+            output_dir = f"{classification_model.args.output_dir}{classification_model.args.model_type}/"
 
         if (
             os.path.exists(output_dir)
@@ -101,21 +100,7 @@ def train_model(
             train_dataset = load_hf_dataset(
                 train_df, classification_model.tokenizer, classification_model.args, multi_label=multi_label
             )
-        elif isinstance(train_df, str) and classification_model.args.lazy_loading:
-            if classification_model.args.sliding_window:
-                raise ValueError("Lazy loading cannot be used with sliding window.")
-            if classification_model.args.model_type in ["layoutlm", "layoutlmv2"]:
-                raise NotImplementedError(
-                    "Lazy loading is not implemented for LayoutLM models"
-                )
-            train_dataset = LazyClassificationDataset(
-                train_df, classification_model.tokenizer, classification_model.args
-            )
         else:
-            if classification_model.args.lazy_loading:
-                raise ValueError(
-                    "Input must be given as a path to a file when using lazy loading"
-                )
             if "text" in train_df.columns and "labels" in train_df.columns:
 
                 train_examples = (

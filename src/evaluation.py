@@ -1,27 +1,22 @@
 import logging
 import os
-import numpy as np
-import torch
-from tqdm import tqdm
+import warnings
 from collections import Counter
 from dataclasses import asdict
-import warnings
-from torch.utils.data import DataLoader, SequentialSampler
-from src.classification.classification_utils import (
-    InputExample,
-    LazyClassificationDataset,
-    load_hf_dataset
-)
-from src.utils import calculate_loss
+
+import numpy as np
+import torch
 from scipy.special import softmax
-from sklearn.metrics import (
-    confusion_matrix,
-    label_ranking_average_precision_score,
-    matthews_corrcoef,
-    roc_curve,
-    auc,
-    average_precision_score,
-)
+from sklearn.metrics import (auc, average_precision_score, confusion_matrix,
+                             label_ranking_average_precision_score,
+                             matthews_corrcoef, roc_curve)
+from torch.utils.data import DataLoader, SequentialSampler
+from tqdm import tqdm
+
+from src.classification.classification_utils import (InputExample,
+                                                     load_hf_dataset)
+from src.utils import calculate_loss
+
 try:
     import wandb
 
@@ -113,14 +108,7 @@ def evaluate(
             eval_df, classification_model.tokenizer, classification_model.args, multi_label=multi_label
         )
         eval_examples = None
-    elif isinstance(eval_df, str) and classification_model.args.lazy_loading:
-        eval_dataset = LazyClassificationDataset(eval_df, classification_model.tokenizer, classification_model.args)
-        eval_examples = None
     else:
-        if classification_model.args.lazy_loading:
-            raise ValueError(
-                "Input must be given as a path to a file when using lazy loading"
-            )
 
         if "text" in eval_df.columns and "labels" in eval_df.columns:
             eval_examples = (
@@ -312,6 +300,43 @@ def evaluate(
                     )
                 }
             )
+        
+        if (
+        classification_model.args.wandb_project
+        and wandb_log
+        and multi_label
+        and not classification_model.args.regression
+        ):
+            if not wandb.setup().settings.sweep_id:
+                logger.info(" Initializing WandB run for evaluation.")
+                wandb.init(
+                    project=args.wandb_project,
+                    config={**asdict(args)},
+                    **args.wandb_kwargs,
+                )
+                wandb.run._label(repo="simpletransformers")
+            if not args.labels_map:
+                classification_model.args.labels_map = {i: i for i in range(classification_model.num_labels)}
+
+            labels_list = sorted(list(classification_model.args.labels_map.keys()))
+            inverse_labels_map = {
+                value: key for key, value in classification_model.args.labels_map.items()
+            }
+
+            truth = [inverse_labels_map[out] for out in out_label_ids]
+
+            if not classification_model.args.sliding_window:
+                # ROC`
+                wandb.log({"LRAP": wandb.plots.ROC(truth, model_outputs, labels_list)})
+
+                # Precision Recall
+                wandb.log(
+                    {
+                        "pr": wandb.plots.precision_recall(
+                            truth, model_outputs, labels_list
+                        )
+                    }
+                )
 
     return results, model_outputs, wrong
 
