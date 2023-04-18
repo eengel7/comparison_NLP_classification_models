@@ -16,11 +16,11 @@ class DataArgs():
 
     remove_structure_headlines: bool = True
     # Loading raw data
-    raw_data_path: str = 'data/raw_data/Finansierade projekt.xlsx' # Funded projects
+    raw_data_path: str = 'data/raw_data/ymner_data.xlsx' # Funded projects
     raw_classifications_SCB: str = 'data/raw_data/SCB_classifications.xlsx' # SCB based classifications
 
     preprocessed_path: str = 'data/preprocessed_for_'
-    language: str ='En'   # 'En' or 'Sv'
+    language: str ='en'   # 'En' or 'Sv'
 
     # # column names
     # # SCB_labels: Label_En
@@ -29,9 +29,8 @@ class DataArgs():
     # # title: Title En
     test_size: int= 0.3
     tokenize: bool = False 
-    remove_stopwords: bool = False
-    apply_stemming: bool = False 
-
+    remove_stopwords: bool = True
+    apply_stemming: bool = True
     # SCB classifications 
     digits: int =  5   # Options: 1, 3,5        Number of digits indicating the level of classification
 
