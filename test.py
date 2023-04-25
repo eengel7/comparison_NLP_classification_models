@@ -3,8 +3,9 @@ from src.classification import (
 )
 import pandas as pd
 import logging
-from src.training.training import train_model
-from src.training.evaluation import eval_model
+from src.training import train_model
+from src.evaluation import eval_model
+from src.prediction import predict
 
 logging.basicConfig(level=logging.INFO)
 transformers_logger = logging.getLogger("transformers")
@@ -50,6 +51,6 @@ result, model_outputs, wrong_predictions = eval_model(model,
 )
 
 # # Make predictions with the model
-# predictions, raw_outputs = model.predict(["Sam"])
+predictions, raw_outputs = model.predict(["Sam"])
 
-# print(predictions,raw_outputs)
+print(predictions,raw_outputs)

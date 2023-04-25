@@ -141,3 +141,4 @@ wandb/
 
 data/preprocessed_*
 wandb/latest-run
+reports/

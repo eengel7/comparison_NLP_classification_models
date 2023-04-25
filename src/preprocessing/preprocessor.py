@@ -3,7 +3,7 @@ import pickle
 from abc import ABC, abstractmethod
 import random
 import numpy as np
-
+import joblib
 from config.global_args import GlobalArgs
 from config.data_args import DataArgs
 
@@ -58,7 +58,7 @@ class Preprocessor(ABC):
             info = 'all_levels'
 
         self.file_name = f"preprocessed_data_{self.language}_{info}.pkl"
-
+        self.binarizer_name = f"binarizer_{info}.joblib"
 
     @abstractmethod
     def get_preprocessed_data(self):
@@ -155,10 +155,23 @@ class Preprocessor(ABC):
         return X_train, X_test, Y_train, Y_test
     
     def prepare_targets(self, Y_train, Y_test):
-        le = MultiLabelBinarizer()
-        Y_train = le.fit_transform(Y_train)
-        Y_test = le.transform(Y_test)
 
+        dest = self.args.preprocessed_path + self.model_type
+        os.makedirs(dest, exist_ok=True)
+        file = os.path.join(dest, self.binarizer_name) 
+        
+        if os.path.isfile(file):
+            # load binarizer from file
+            le = joblib.load(file)
+        else:
+            le = MultiLabelBinarizer()
+            le.fit(Y_train)
+            # save binarizer to file
+            print(f'Saving new binarizer to {file}...')
+            joblib.dump(le, file)
+
+        Y_train = le.transform(Y_train)
+        Y_test = le.transform(Y_test)
         print(f'{len(le.classes_)} classes were encoded by MultiLabelBinarizer.')
 
         return Y_train, Y_test
@@ -198,7 +211,7 @@ class LogRegPreprocessor(Preprocessor):
         
         # Check whether data already exists
         elif self.data_exists and self.overwrite_data:
-            print('Data already exists and will be overwritten.')
+            print('Data already exists but will be overwritten.')
 
         # Prepare data
         df = self.load_dataframe()
