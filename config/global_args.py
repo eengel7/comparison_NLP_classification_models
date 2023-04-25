@@ -10,5 +10,6 @@ class GlobalArgs():
     """
     Global args for this repo
     """
-    manual_seed: bool = True,
-    random_seed: int =42,
+    manual_seed: bool = True
+    random_seed: int = 42
+    min_words: int = 20

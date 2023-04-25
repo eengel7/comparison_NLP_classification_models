@@ -10,6 +10,7 @@ import torch
 from torch.optim import AdamW
 from torch.utils.data import (DataLoader, RandomSampler)
 from src.utils import calculate_loss
+from src.evaluation import eval_model
 from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm, trange
 from transformers.optimization import (
@@ -18,9 +19,7 @@ from transformers.optimization import (
     get_cosine_with_hard_restarts_schedule_with_warmup,
     get_linear_schedule_with_warmup, get_polynomial_decay_schedule_with_warmup)
 
-from src.classification.classification_utils import (InputExample,
-                                                     flatten_results,
-                                                     load_hf_dataset)
+from src.classification.classification_utils import (flatten_results)
 try:
     import wandb
 
@@ -88,36 +87,23 @@ def train_model(
             )
         classification_model._move_model_to_device()
 
-        if classification_model.args.use_hf_datasets:
-            if classification_model.args.sliding_window:
-                raise ValueError(
-                    "HuggingFace Datasets cannot be used with sliding window."
-                )
-            if classification_model.args.model_type in ["layoutlm", "layoutlmv2"]:
-                raise NotImplementedError(
-                    "HuggingFace Datasets support is not implemented for LayoutLM models"
-                )
-            train_dataset = load_hf_dataset(
-                train_df, classification_model.tokenizer, classification_model.args, multi_label=multi_label
+        if "text" in train_df.columns and "labels" in train_df.columns:
+
+            train_examples = (
+                train_df["text"].astype(str).tolist(),
+                train_df["labels"].tolist(),
             )
         else:
-            if "text" in train_df.columns and "labels" in train_df.columns:
-
-                train_examples = (
-                    train_df["text"].astype(str).tolist(),
-                    train_df["labels"].tolist(),
-                )
-            else:
-                warnings.warn(
-                    "Dataframe headers not specified. Falling back to using column 0 as text and column 1 as labels."
-                )
-                train_examples = (
-                    train_df.iloc[:, 0].astype(str).tolist(),
-                    train_df.iloc[:, 1].tolist(),
-                )
-            train_dataset = classification_model.load_and_cache_examples(
-                train_examples, verbose=verbose
+            warnings.warn(
+                "Dataframe headers not specified. Falling back to using column 0 as text and column 1 as labels."
             )
+            train_examples = (
+                train_df.iloc[:, 0].astype(str).tolist(),
+                train_df.iloc[:, 1].tolist(),
+            )
+        train_dataset = classification_model.load_and_cache_examples(
+            train_examples, verbose=verbose
+        )
         train_sampler = RandomSampler(train_dataset)
         train_dataloader = DataLoader(
             train_dataset,
@@ -361,8 +347,8 @@ def train(
             logger.info("   Starting fine-tuning.")
 
     if args.evaluate_during_training:
-        training_progress_scores = classification_model._create_training_progress_scores(
-            multi_label, **kwargs
+        training_progress_scores = _create_training_progress_scores(
+            classification_model, multi_label, **kwargs
         )
 
     if args.wandb_project:
@@ -469,7 +455,7 @@ def train(
                     and global_step % args.evaluate_during_training_steps == 0
                 ):
                     # Only evaluate when single GPU otherwise metrics may not average well
-                    results, _, _ = classification_model.eval_model(
+                    results, _, _ = eval_model(classification_model,
                         eval_df,
                         verbose=verbose and args.evaluate_during_training_verbose,
                         silent=args.evaluate_during_training_silent,
@@ -797,3 +783,47 @@ def train(
         if not classification_model.args.evaluate_during_training
         else training_progress_scores,
     )
+
+def _create_training_progress_scores(classification_model, multi_label, **kwargs):
+
+    extra_metrics = {key: [] for key in kwargs}
+    if multi_label:
+        training_progress_scores = {
+            "global_step": [],
+            "LRAP": [],
+            "train_loss": [],
+            "eval_loss": [],
+            **extra_metrics,
+        }
+    else:
+        if classification_model.model.num_labels == 2:
+            training_progress_scores = {
+                "global_step": [],
+                "tp": [],
+                "tn": [],
+                "fp": [],
+                "fn": [],
+                "mcc": [],
+                "train_loss": [],
+                "eval_loss": [],
+                "auroc": [],
+                "auprc": [],
+                **extra_metrics,
+            }
+        elif classification_model.model.num_labels == 1:
+            training_progress_scores = {
+                "global_step": [],
+                "train_loss": [],
+                "eval_loss": [],
+                **extra_metrics,
+            }
+        else:
+            training_progress_scores = {
+                "global_step": [],
+                "mcc": [],
+                "train_loss": [],
+                "eval_loss": [],
+                **extra_metrics,
+            }
+
+    return training_progress_scores

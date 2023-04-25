@@ -10,9 +10,12 @@ import tempfile
 import warnings
 from pathlib import Path
 
+from scipy.stats import mode
+from tqdm.auto import tqdm
+from src.utils import calculate_loss
 import numpy as np
 import torch
-from torch.utils.data import TensorDataset
+from torch.utils.data import TensorDataset, DataLoader, SequentialSampler
 from transformers import WEIGHTS_NAME  # NystromformerTokenizer,
 from transformers import (AlbertConfig, AlbertForSequenceClassification,
                           AlbertTokenizer, AutoConfig,
@@ -405,10 +408,6 @@ class ClassificationModel:
 
         Utility function for train() and eval() methods. Not intended to be used directly.
         """
-
-        process_count = self.args.process_count
-
-        tokenizer = self.tokenizer
         args = self.args
 
         if not no_cache:
@@ -423,141 +422,279 @@ class ClassificationModel:
             os.makedirs(self.args.cache_dir, exist_ok=True)
 
         mode = "dev" if evaluate else "train"
-        if args.sliding_window or self.args.model_type in ["layoutlm", "layoutlmv2"]:
-            cached_features_file = os.path.join(
-                args.cache_dir,
-                "cached_{}_{}_{}_{}_{}".format(
-                    mode,
-                    args.model_type,
-                    args.max_seq_length,
-                    self.num_labels,
-                    len(examples),
-                ),
-            )
 
-            if os.path.exists(cached_features_file) and (
-                (not args.reprocess_input_data and not no_cache)
-                or (mode == "dev" and args.use_cached_eval_features and not no_cache)
-            ):
-                features = torch.load(cached_features_file)
-                if verbose:
-                    logger.info(
-                        f" Features loaded from cache at {cached_features_file}"
-                    )
+        dataset = ClassificationDataset(
+            examples,
+            self.tokenizer,
+            self.args,
+            mode=mode,
+            multi_label=multi_label,
+            output_mode=output_mode,
+            no_cache=no_cache,
+        )
+        return dataset
+    
+    def get_floating_point_ops(self, ):
+
+        return None
+
+
+    def predict(self, to_predict, multi_label=False):
+            """
+            Performs predictions on a list of text.
+            Args:
+                to_predict: A python list of text (str) to be sent to the model for prediction.
+                            For layoutlm and layoutlmv2 model types, this should be a list of lists:
+                            [
+                                [text1, [x0], [y0], [x1], [y1]],
+                                [text2, [x0], [y0], [x1], [y1]],
+                                ...
+                                [textn, [x0], [y0], [x1], [y1]]
+                            ]
+            Returns:
+                preds: A python list of the predictions (0 or 1) for each text.
+                model_outputs: A python list of the raw model outputs for each text.
+            """
+
+            model = self.model
+            args = self.args
+
+            eval_loss = 0.0
+            nb_eval_steps = 0
+            preds = np.empty((len(to_predict), self.num_labels))
+            if multi_label:
+                out_label_ids = np.empty((len(to_predict), self.num_labels))
             else:
-                if verbose:
-                    logger.info(" Converting to features started. Cache is not used.")
-                    if args.sliding_window:
-                        logger.info(" Sliding window enabled")
+                out_label_ids = np.empty((len(to_predict)))
 
-                if self.args.model_type not in ["layoutlm", "layoutlmv2"]:
-                    if len(examples) == 3:
-                        examples = [
-                            InputExample(i, text_a, text_b, label)
-                            for i, (text_a, text_b, label) in enumerate(zip(*examples))
-                        ]
-                    else:
-                        examples = [
-                            InputExample(i, text_a, None, label)
-                            for i, (text_a, label) in enumerate(zip(*examples))
-                        ]
+            if not multi_label and self.args.onnx:
+                model_inputs = self.tokenizer.batch_encode_plus(
+                    to_predict, return_tensors="pt", padding=True, truncation=True
+                )
 
-                # If labels_map is defined, then labels need to be replaced with ints
-                if self.args.labels_map and not self.args.regression:
-                    for example in examples:
-                        if multi_label:
-                            example.label = [
-                                self.args.labels_map[label] for label in example.label
+                if self.args.model_type in [
+                    "bert",
+                    "xlnet",
+                    "albert",
+                    "layoutlm",
+                    "layoutlmv2",
+                ]:
+                    for i, (input_ids, attention_mask, token_type_ids) in enumerate(
+                        zip(
+                            model_inputs["input_ids"],
+                            model_inputs["attention_mask"],
+                            model_inputs["token_type_ids"],
+                        )
+                    ):
+                        input_ids = input_ids.unsqueeze(0).detach().cpu().numpy()
+                        attention_mask = attention_mask.unsqueeze(0).detach().cpu().numpy()
+                        token_type_ids = token_type_ids.unsqueeze(0).detach().cpu().numpy()
+                        inputs_onnx = {
+                            "input_ids": input_ids,
+                            "attention_mask": attention_mask,
+                            "token_type_ids": token_type_ids,
+                        }
+
+                        # Run the model (None = get all the outputs)
+                        output = self.model.run(None, inputs_onnx)
+
+                        preds[i] = output[0]
+
+                else:
+                    for i, (input_ids, attention_mask) in enumerate(
+                        zip(model_inputs["input_ids"], model_inputs["attention_mask"])
+                    ):
+                        input_ids = input_ids.unsqueeze(0).detach().cpu().numpy()
+                        attention_mask = attention_mask.unsqueeze(0).detach().cpu().numpy()
+                        inputs_onnx = {
+                            "input_ids": input_ids,
+                            "attention_mask": attention_mask,
+                        }
+
+                        # Run the model (None = get all the outputs)
+                        output = self.model.run(None, inputs_onnx)
+
+                        preds[i] = output[0]
+
+                model_outputs = preds
+                preds = np.argmax(preds, axis=1)
+
+            else:
+                self._move_model_to_device()
+                dummy_label = (
+                    0
+                    if not self.args.labels_map
+                    else next(iter(self.args.labels_map.keys()))
+                )
+
+                if multi_label:
+                    dummy_label = [dummy_label for i in range(self.num_labels)]
+
+                if args.n_gpu > 1:
+                    model = torch.nn.DataParallel(model)
+
+                if isinstance(to_predict[0], list):
+                    eval_examples = (
+                        *zip(*to_predict),
+                        [dummy_label for i in range(len(to_predict))],
+                    )
+                else:
+                    eval_examples = (
+                        to_predict,
+                        [dummy_label for i in range(len(to_predict))],
+                    )
+
+                
+                eval_dataset = self.load_and_cache_examples(
+                    eval_examples, evaluate=True, multi_label=multi_label, no_cache=True
+                )
+
+                eval_sampler = SequentialSampler(eval_dataset)
+                eval_dataloader = DataLoader(
+                    eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size
+                )
+
+                if self.config.output_hidden_states:
+                    model.eval()
+                    preds = None
+                    out_label_ids = None
+                    for i, batch in enumerate(
+                        tqdm(
+                            eval_dataloader, disable=args.silent, desc="Running Prediction"
+                        )
+                    ):
+                        # batch = tuple(t.to(self.device) for t in batch)
+                        with torch.no_grad():
+                            inputs = self._get_inputs_dict(batch, no_hf=True)
+
+                            
+                            outputs = calculate_loss(
+                                model,
+                                inputs,
+                                weight=self.weight,
+                                num_labels=self.num_labels,
+                                device=self.device,
+                            )
+                            tmp_eval_loss, logits = outputs[:2]
+                            embedding_outputs, layer_hidden_states = (
+                                outputs[2][0],
+                                outputs[2][1:],
+                            )
+
+                            if multi_label:
+                                logits = logits.sigmoid()
+
+                            if self.args.n_gpu > 1:
+                                tmp_eval_loss = tmp_eval_loss.mean()
+                            eval_loss += tmp_eval_loss.item()
+
+                        nb_eval_steps += 1
+
+                        if preds is None:
+                            preds = logits.detach().cpu().numpy()
+                            out_label_ids = inputs["labels"].detach().cpu().numpy()
+                            all_layer_hidden_states = np.array(
+                                [
+                                    state.detach().cpu().numpy()
+                                    for state in layer_hidden_states
+                                ]
+                            )
+                            all_embedding_outputs = embedding_outputs.detach().cpu().numpy()
+                        else:
+                            preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
+                            out_label_ids = np.append(
+                                out_label_ids,
+                                inputs["labels"].detach().cpu().numpy(),
+                                axis=0,
+                            )
+                            all_layer_hidden_states = np.append(
+                                all_layer_hidden_states,
+                                np.array(
+                                    [
+                                        state.detach().cpu().numpy()
+                                        for state in layer_hidden_states
+                                    ]
+                                ),
+                                axis=1,
+                            )
+                            all_embedding_outputs = np.append(
+                                all_embedding_outputs,
+                                embedding_outputs.detach().cpu().numpy(),
+                                axis=0,
+                            )
+                else:
+                    n_batches = len(eval_dataloader)
+                    for i, batch in enumerate(tqdm(eval_dataloader, disable=args.silent)):
+                        model.eval()
+                        # batch = tuple(t.to(device) for t in batch)
+
+                        with torch.no_grad():
+                            inputs = self._get_inputs_dict(batch, no_hf=True)
+                            outputs = calculate_loss(
+                                model,
+                                inputs,
+                                weight=self.weight,
+                                num_labels=self.num_labels,
+                                device=self.device,
+                            )
+                            tmp_eval_loss, logits = outputs[:2]
+
+                            if multi_label:
+                                logits = logits.sigmoid()
+
+                            if self.args.n_gpu > 1:
+                                tmp_eval_loss = tmp_eval_loss.mean()
+                            eval_loss += tmp_eval_loss.item()
+
+                        nb_eval_steps += 1
+
+                        start_index = self.args.eval_batch_size * i
+                        end_index = (
+                            start_index + self.args.eval_batch_size
+                            if i != (n_batches - 1)
+                            else len(eval_dataset)
+                        )
+                        preds[start_index:end_index] = logits.detach().cpu().numpy()
+                        out_label_ids[start_index:end_index] = (
+                            inputs["labels"].detach().cpu().numpy()
+                        )
+
+                eval_loss = eval_loss / nb_eval_steps
+
+                if not multi_label and args.regression is True:
+                    preds = np.squeeze(preds)
+                    model_outputs = preds
+                else:
+                    model_outputs = preds
+                    if multi_label:
+                        if isinstance(args.threshold, list):
+                            threshold_values = args.threshold
+                            preds = [
+                                [
+                                    self._threshold(pred, threshold_values[i])
+                                    for i, pred in enumerate(example)
+                                ]
+                                for example in preds
                             ]
                         else:
-                            example.label = self.args.labels_map[example.label]
+                            preds = [
+                                [self._threshold(pred, args.threshold) for pred in example]
+                                for example in preds
+                            ]
+                    else:
+                        preds = np.argmax(preds, axis=1)
 
-                features = convert_examples_to_features(
-                    examples,
-                    args.max_seq_length,
-                    tokenizer,
-                    output_mode,
-                    # XLNet has a CLS token at the end
-                    cls_token_at_end=bool(args.model_type in ["xlnet"]),
-                    cls_token=tokenizer.cls_token,
-                    cls_token_segment_id=2 if args.model_type in ["xlnet"] else 0,
-                    sep_token=tokenizer.sep_token,
-                    # RoBERTa uses an extra separator b/w pairs of sentences,
-                    # cf. github.com/pytorch/fairseq/commit/1684e166e3da03f5b600dbb7855cb98ddfcd0805
-                    sep_token_extra=args.model_type in MODELS_WITH_EXTRA_SEP_TOKEN,
-                    # PAD on the left for XLNet
-                    pad_on_left=bool(args.model_type in ["xlnet"]),
-                    pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
-                    pad_token_segment_id=4 if args.model_type in ["xlnet"] else 0,
-                    process_count=process_count,
-                    multi_label=multi_label,
-                    silent=args.silent or silent,
-                    use_multiprocessing=args.use_multiprocessing_for_evaluation,
-                    sliding_window=args.sliding_window,
-                    flatten=not evaluate,
-                    stride=args.stride,
-                    add_prefix_space=args.model_type in MODELS_WITH_ADD_PREFIX_SPACE,
-                    # avoid padding in case of single example/online inferencing to decrease execution time
-                    pad_to_max_length=bool(len(examples) > 1),
-                    args=args,
-                )
-                if verbose and args.sliding_window:
-                    logger.info(
-                        f" {len(features)} features created from {len(examples)} samples."
-                    )
+            if self.args.labels_map and not self.args.regression:
+                inverse_labels_map = {
+                    value: key for key, value in self.args.labels_map.items()
+                }
+                preds = [inverse_labels_map[pred] for pred in preds]
 
-                if not no_cache:
-                    torch.save(features, cached_features_file)
-
-            if args.sliding_window and evaluate:
-                features = [
-                    [feature_set] if not isinstance(feature_set, list) else feature_set
-                    for feature_set in features
-                ]
-                window_counts = [len(sample) for sample in features]
-                features = [
-                    feature for feature_set in features for feature in feature_set
-                ]
-
-            all_input_ids = torch.tensor(
-                [f.input_ids for f in features], dtype=torch.long
-            )
-            all_input_mask = torch.tensor(
-                [f.input_mask for f in features], dtype=torch.long
-            )
-            all_segment_ids = torch.tensor(
-                [f.segment_ids for f in features], dtype=torch.long
-            )
-
-            if output_mode == "classification":
-                all_label_ids = torch.tensor(
-                    [f.label_id for f in features], dtype=torch.long
-                )
-            elif output_mode == "regression":
-                all_label_ids = torch.tensor(
-                    [f.label_id for f in features], dtype=torch.float
-                )
-
-            dataset = TensorDataset(
-                all_input_ids, all_input_mask, all_segment_ids, all_label_ids
-            )
-
-            if args.sliding_window and evaluate:
-                return dataset, window_counts
+            if self.config.output_hidden_states:
+                return preds, model_outputs, all_embedding_outputs, all_layer_hidden_states
             else:
-                return dataset
-        else:
-            dataset = ClassificationDataset(
-                examples,
-                self.tokenizer,
-                self.args,
-                mode=mode,
-                multi_label=multi_label,
-                output_mode=output_mode,
-                no_cache=no_cache,
-            )
-            return dataset
-    # def get_floating_point_ops(
+                return preds, model_outputs
+
 
     def convert_to_onnx(self, output_dir=None, set_onnx_arg=True):
         """Convert the model to ONNX format and save to output_dir
@@ -633,66 +770,9 @@ class ClassificationModel:
                 )
 
         return inputs
-
+    
     def _get_last_metrics(self, metric_values):
         return {metric: values[-1] for metric, values in metric_values.items()}
-
-    def _create_training_progress_scores(self, multi_label, **kwargs):
-        return collections.defaultdict(list)
-        """extra_metrics = {key: [] for key in kwargs}
-        if multi_label:
-            training_progress_scores = {
-                "global_step": [],
-                "LRAP": [],
-                "train_loss": [],
-                "eval_loss": [],
-                **extra_metrics,
-            }
-        else:
-            if self.model.num_labels == 2:
-                if self.args.sliding_window:
-                    training_progress_scores = {
-                        "global_step": [],
-                        "tp": [],
-                        "tn": [],
-                        "fp": [],
-                        "fn": [],
-                        "mcc": [],
-                        "train_loss": [],
-                        "eval_loss": [],
-                        **extra_metrics,
-                    }
-                else:
-                    training_progress_scores = {
-                        "global_step": [],
-                        "tp": [],
-                        "tn": [],
-                        "fp": [],
-                        "fn": [],
-                        "mcc": [],
-                        "train_loss": [],
-                        "eval_loss": [],
-                        "auroc": [],
-                        "auprc": [],
-                        **extra_metrics,
-                    }
-            elif self.model.num_labels == 1:
-                training_progress_scores = {
-                    "global_step": [],
-                    "train_loss": [],
-                    "eval_loss": [],
-                    **extra_metrics,
-                }
-            else:
-                training_progress_scores = {
-                    "global_step": [],
-                    "mcc": [],
-                    "train_loss": [],
-                    "eval_loss": [],
-                    **extra_metrics,
-                }
-
-        return training_progress_scores"""
 
     def save_model(
         self, output_dir=None, optimizer=None, scheduler=None, model=None, results=None
