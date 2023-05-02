@@ -45,7 +45,6 @@ from transformers import (
 )
 
 from src.classification import ClassificationModel
-from config.global_args import global_args
 from config.model_args import MultiLabelClassificationArgs
 from config.utils import sweep_config_to_sweep_values
 from src.custom_models.models import (
@@ -213,9 +212,6 @@ class MultiLabelClassificationModel(ClassificationModel):
             if self.args.n_gpu > 0:
                 torch.cuda.manual_seed_all(self.args.manual_seed)
 
-        if not use_cuda:
-            self.args.fp16 = False
-
         config_class, model_class, tokenizer_class = MODEL_CLASSES[model_type]
         if num_labels:
             self.config = config_class.from_pretrained(
@@ -307,66 +303,6 @@ class MultiLabelClassificationModel(ClassificationModel):
         args.load(input_dir)
         return args
 
-    def train_model(
-        self,
-        train_df,
-        multi_label=True,
-        eval_df=None,
-        output_dir=None,
-        show_running_loss=True,
-        args=None,
-        verbose=True,
-        **kwargs,
-    ):
-        return super().train_model(
-            train_df,
-            multi_label=multi_label,
-            eval_df=eval_df,
-            output_dir=output_dir,
-            show_running_loss=show_running_loss,
-            verbose=True,
-            args=args,
-            **kwargs,
-        )
-
-    def eval_model(
-        self,
-        eval_df,
-        multi_label=True,
-        output_dir=None,
-        verbose=False,
-        silent=False,
-        **kwargs,
-    ):
-        return super().eval_model(
-            eval_df,
-            output_dir=output_dir,
-            multi_label=multi_label,
-            verbose=verbose,
-            silent=silent,
-            **kwargs,
-        )
-
-    def evaluate(
-        self,
-        eval_df,
-        output_dir,
-        multi_label=True,
-        prefix="",
-        verbose=True,
-        silent=False,
-        **kwargs,
-    ):
-        return super().evaluate(
-            eval_df,
-            output_dir,
-            multi_label=multi_label,
-            prefix=prefix,
-            verbose=verbose,
-            silent=silent,
-            **kwargs,
-        )
-
     def load_and_cache_examples(
         self,
         examples,
@@ -383,18 +319,6 @@ class MultiLabelClassificationModel(ClassificationModel):
             multi_label=multi_label,
             verbose=verbose,
             silent=silent,
-        )
-
-    def compute_metrics(
-        self, preds, model_outputs, labels, eval_examples, multi_label=True, **kwargs
-    ):
-        return super().compute_metrics(
-            preds,
-            model_outputs,
-            labels,
-            eval_examples,
-            multi_label=multi_label,
-            **kwargs,
         )
 
     def predict(self, to_predict, multi_label=True):

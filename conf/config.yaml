@@ -1,8 +1,0 @@
-defaults:
-  - model: logistic_regression
-  - run_mode: preprocessing # preprocessing, training
-
-
-# paths:
-  
-random_seed: 42

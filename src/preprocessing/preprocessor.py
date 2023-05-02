@@ -1,60 +1,99 @@
 import os
 import pickle
 from abc import ABC, abstractmethod
+import random
+import numpy as np
+import joblib
+from config.global_args import GlobalArgs
+from config.data_args import DataArgs
 
-import hydra
 import pandas as pd
-from omegaconf import DictConfig
-from typing import Any
+from typing import Any, Tuple
 from src.preprocessing.tokenizer import SimpleTokenizer
-from src.preprocessing.vectorizer import BowVectorizer
+from src.preprocessing.vectorizer import BowVectorizer 
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MultiLabelBinarizer, normalize
 
 class Preprocessor(ABC):
-    def __init__(self, cfg: DictConfig):
-        self.cfg = cfg
+    def __init__(
+        self,
+        model_type: str,
+        overwrite_data: bool = True,
+        select_level_of_classification: bool = False,
+        args = None,
+        language: str = None,
+        split_val: bool = True,
+    ):
+        """
+        Initializes a Preprocessor.
+
+        Args: 
+            model_type: The type of model (bert, xlnet, xlm, roberta, distilbert)
+            model_name: The exact architecture and trained weights to use. This may be a Hugging Face Transformers compatible pre-trained model, a community model, or the path to a directory containing model files.
+            tokenizer_type: The type of tokenizer (auto, bert, xlnet, xlm, roberta, distilbert, etc.) to use. If a string is passed, Simple Transformers will try to initialize a tokenizer class from the available MODEL_CLASSES.
+                                Alternatively, a Tokenizer class (subclassed from PreTrainedTokenizer) can be passed.
+        """
+        # self.args = self._load_model_args(model_type), TODO: check or just delete this part
+        self.args = DataArgs()
+        self.model_type = model_type
+        self.overwrite_data = overwrite_data
+        self.select_level_of_classification = select_level_of_classification
+        
+        if GlobalArgs.manual_seed:
+            self.random_seed = GlobalArgs.random_seed
+            random.seed(self.random_seed)
+            np.random.seed(self.random_seed)
+
+        if language:
+            self.language = language
+        else:
+            self.language = self.args.language
+
+        if isinstance(args, dict):
+            self.args.update_from_dict(args)
+
+        self.split_val = split_val
+        if self.split_val:
+            split_info = '_val'
+        
+        if self.select_level_of_classification:
+            info = f'{self.args.digits}_level'
+        else:
+            info = 'all_levels'
+
+        self.file_name = 'preprocessed_data.pkl'
+        dir_name = f"{model_type}_{self.language}_{info}{split_info}"
+        self.dest_name = self.args.preprocessed_path + dir_name
+        self.binarizer_name = f"binarizer_{info}.joblib"
 
     @abstractmethod
-    def preprocess_and_store(self):
+    def get_preprocessed_data(self) -> Tuple[Any]:
         pass
 
+    def data_exists(self) -> bool:
+        os.makedirs(self.dest_name, exist_ok=True)
+        file = os.path.join(self.dest_name, self.file_name) 
+        if  os.path.isfile(file):
+            print(f"{self.file_name} already exists at {self.dest_name}.")
+            return True
+        else:
+            return False
+
+
     def load_classifications(self) -> pd.DataFrame:
-        df_classifications = pd.read_excel(hydra.utils.to_absolute_path(self.cfg.run_mode.paths.classifications),  index_col=0)
+        df_classifications = pd.read_excel(self.args.raw_classifications_SCB,  index_col=0)
 
         # Normalise labels
-        df_classifications['Label_En'] = df_classifications['Label_En'].apply(lambda x: x.strip().lower())
+        df_classifications[f'Label_{self.language}'] = df_classifications[f'Label_{self.language}'].apply(lambda x: x.strip().lower())
 
         return df_classifications
     
-    # def get_matching_SCB_classification_ID(self, research_fields: str, df_classifications: pd.DataFrame) -> str:
-    #     # retrieve unique ID for classification of data'
 
-    #     if isinstance(research_fields, str):
-    #         research_fields = research_fields.split(', ')   #TODO: need to take care of single classifications that contain comma
-
-    #         # Get unique research fields and normalise strings
-    #         research_fields = list({x.lower().strip() for x in research_fields if x})
-            
-    #         # Match research field with given SCB classification and return classification with specific level, i.e. number of digits
-    #         for field in research_fields:
-    #             classification_id = df_classifications.index[df_classifications['Label_En'] == field][0]
-            
-    #             level_of_classification = len(str(classification_id))
-                
-    #             if level_of_classification == self.cfg.run_mode.digits:
-    #                 return classification_id
-    #             else:
-    #                 print(f"No matching classification found for {research_fields}.")
-    #                 return None
-                
-    #     else:
-    #         return None
-    
     def get_matching_SCB_class_IDs(self, research_fields: str, df_classifications: pd.DataFrame) -> list[int]:
         # retrieve class ID for all research fields'
         
         if isinstance(research_fields, str):
-            research_fields = research_fields.split('; ')  
+            research_fields = research_fields.split('|')  
             
             # Get unique research fields and normalise strings
             research_fields = list({" ".join(x.lower().strip().split()) for x in research_fields if x})
@@ -63,8 +102,10 @@ class Preprocessor(ABC):
             # Match research field with given SCB classification and return classification with specific level, i.e. number of digits
             for field in research_fields:
                 
-                class_id = df_classifications.index[df_classifications['Label_En'] == field][:] 
-                if not class_id.empty:
+                class_id = df_classifications.index[df_classifications[f'Label_{self.language}'] == field][:] 
+                if field =='unclassified':
+                    pass
+                elif not class_id.empty:
                     class_IDs.extend(class_id.values[:])
                 else:
                     print(f"No matching classification found for {field}.")
@@ -73,84 +114,166 @@ class Preprocessor(ABC):
         else:
             print(f"{research_fields} is not a string.")
             return None
-    
+        
+    def guarantee_hierarchical_path(self, IDs: list[int])-> list[int]:
+        for label in IDs:
+            digits = len(str(label))
+
+            if digits >= 3:
+                first_digit = int(str(label)[0])
+                if not first_digit in IDs:
+                    IDs.append(first_digit)
+            elif digits == 5:
+                three_digits = int(str(label)[0:3])
+                if not three_digits in IDs:
+                    IDs.append(three_digits)
+        return IDs
+                    
     def filter_IDs(self, IDs: list[int]) -> list[int]:
         # select IDs depending on the provided classification level 
-        return [id for id in IDs if len(str(id)) == self.cfg.run_mode.digits]
+        return [id for id in IDs if len(str(id)) == self.args.digits]
 
 
-    def load_dataframe(self) -> pd.DataFrame:
-        use_columns = ['Title En', 'Description En', 'Research fields']
-        df = pd.read_excel(hydra.utils.to_absolute_path(self.cfg.run_mode.paths.raw_data), usecols = use_columns)
-        print('Raw data is loaded.')
-        return df
+    def load_dataframe(self, join_headline_body_by_line_break: bool = True) -> pd.DataFrame:
 
-    def filter_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        use_columns = [f'title_{self.language}', f'description_{self.language}', f'research_fields_{self.language}']
+        df = pd.read_excel(self.args.raw_data_path, usecols = use_columns)
+        df.rename(columns = {f'research_fields_{self.language}':'labels'}, inplace = True)
 
+        if join_headline_body_by_line_break:
+            df["text"] = df[f'title_{self.language}'].astype(str) +"\n"+ df[f'description_{self.language}']
+        else:
+            df["text"] = df[f'title_{self.language}'].astype(str) + df[f'description_{self.language}']
+
+        df = self.clean_df(df)  
+        return df[['text','labels']]
+
+    def clean_df(self, df: pd.DataFrame) -> pd.DataFrame:
         # Remove nan
         df = df.dropna().reset_index(drop=True)
 
-        # Remove noise from data
-        df['Description En'] = df['Description En'].apply(lambda x: x.replace('Purpose and goal: ','' ))
-
         # Remove unclassified data
-        df = df[df['Research fields'] != 'Unclassified']
+        df = df[df['labels'] != 'Unclassified']
+
+        word_counts = df[['text']].apply(lambda x: len(' '.join(x).split()), axis=1)
+        df = df[word_counts >= GlobalArgs.min_words]
 
         return df
 
-    def split_data(self, df: pd.DataFrame) -> list[pd.DataFrame]:
-        test_size = self.cfg.run_mode.test_size
-        print(df)
-
+    def split_data(self, df: pd.DataFrame, get_val: bool = True) -> list[pd.DataFrame]:
+        test_size = self.args.test_size
+        validation_size = self.args.validation_size 
         X_train, X_test, Y_train, Y_test  = train_test_split(
-            df['Description En'],
-            df['Research fields'],
+            df['text'],
+            df['labels'],
             test_size = test_size,
-            shuffle = True,
-            #stratify = df['Research fields'],
-            random_state = 42,
+            shuffle = True
         )
 
+        if get_val:
+            X_train, X_val, Y_train, Y_val  = train_test_split(
+                X_train,
+                Y_train,
+                test_size = validation_size,
+                shuffle = True
+            )
+
+            return X_train, X_test, X_val, Y_train, Y_test, Y_val
         return X_train, X_test, Y_train, Y_test
-
-    def store_data(self, dataset_dict: dict):
-        dest = self.cfg.run_mode.paths.preprocessed_path
-        os.makedirs(dest, exist_ok=True)
-
-        dest = hydra.utils.to_absolute_path(dest)
-
-        # file_name = self.cfg.run_mode.paths.preprocessed_path
-
-        file = os.path.join(dest, f"preprocessed_data.pkl") 
-        if not os.path.isfile(file):
-
-            pickle.dump(dataset_dict, open(file, "wb"))
-            # pickle.dump(data, open(file, "wb"))
-            print(f"Saved preprocessed_data.pkl at {dest}.")
+    
+    def prepare_targets(self, Y_train, Y_test, Y_val = None):
+        os.makedirs(self.dest_name, exist_ok=True)
+        file = os.path.join(self.dest_name, self.binarizer_name) 
+        
+        if os.path.isfile(file):
+            # load binarizer from file
+            le = joblib.load(file)
         else:
-            print(f"preprocessed_data.pkl already exists at {dest}.")
+            le = MultiLabelBinarizer()
+            le.fit(Y_train)
+            # save binarizer to file
+            print(f'Saving new binarizer to {file}...')
+            joblib.dump(le, file)
 
+        Y_train = le.transform(Y_train)
+        Y_test = le.transform(Y_test)
+        if not Y_val.empty:
+            Y_val = le.transform(Y_val) 
+
+        print(f'{len(le.classes_)} classes were encoded by MultiLabelBinarizer.')
+
+        return Y_train, Y_test, Y_val
+
+    def store_data(self, data: Any):
+        os.makedirs(self.dest_name, exist_ok=True)
+        file = os.path.join(self.dest_name, self.file_name) 
+
+        if not os.path.isfile(file):
+            pickle.dump(data, open(file, "wb"))
+            self.save_data_args(self.dest_name)
+            print(f"Saved {self.file_name} at {self.dest_name}.")
+
+        elif os.path.isfile(file) and self.overwrite_data:
+            pickle.dump(data, open(file, "wb"))
+            self.save_data_args(self.dest_name)
+            print(f"{self.file_name} at {self.dest_name} is overwritten.")
+            
+        else:
+            print(f"{self.file_name} already exists at {self.dest_name}.")
+        
+    def save_data_args(self, output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+        self.args.save(output_dir)
+
+    def _load_model_args(self, input_dir):
+        args = DataArgs()
+        args.load(input_dir)
+        return args
+    
 class LogRegPreprocessor(Preprocessor):
 
-    def preprocess_and_store(self):
+    def get_preprocessed_data(self):
+
+        if self.data_exists and not self.overwrite_data:
+            print('Data already exists and will not be overwritten.')
+            os.makedirs(self.dest_name, exist_ok=True)
+            file = os.path.join(self.dest_name, self.file_name) 
+            with open(file, 'rb') as file:
+                dataset_dict = pickle.load(file)
+            X_train, X_test, Y_train, Y_test = dataset_dict["X_train"], dataset_dict["X_test"], dataset_dict["Y_train"], dataset_dict["Y_test"]
+            
+            return X_train, X_test, Y_train, Y_test
+        
+        # Check whether data already exists
+        elif self.data_exists and self.overwrite_data:
+            print('Data already exists but will be overwritten.')
 
         # Prepare data
         df = self.load_dataframe()
-        df = self.filter_dataframe(df)
-        simple_tokenizer = SimpleTokenizer(remove_stopwords =  self.cfg.run_mode.tokenize.remove_stopwords, apply_stemming =  self.cfg.run_mode.tokenize.apply_stemming) 
-        df['Description En'] = simple_tokenizer(df['Description En'])
+        
+        simple_tokenizer = SimpleTokenizer(remove_stopwords =  self.args.remove_stopwords, apply_stemming =  self.args.apply_stemming) 
+        df['text'] = simple_tokenizer(df['text'])
 
         # Load SCB classifications and retrieve unique label for data
         df_classifications = self.load_classifications()
-        df['Research fields'] = df['Research fields'].apply(lambda x: self.get_matching_SCB_class_IDs(x, df_classifications))
+        df['labels'] = df['labels'].apply(lambda x: self.get_matching_SCB_class_IDs(x, df_classifications))
 
-        # Filter labels depending on  chosen level of classification (in config)
-        df['Research fields'] = df['Research fields'].apply(lambda x: self.filter_IDs(x)) 
+        # Filter labels depending on chosen level of classification (in config)
+        if self.select_level_of_classification:
+            df['labels'] = df['labels'].apply(lambda x: self.filter_IDs(x)) 
+        
+        nof_labels = df['labels'].str.len().sum()
 
-        print(df)
+        # Add parenting label nodes to match hiearchical structure
+        if self.args.add_parent_nodes:
+            df['labels'] = df['labels'].apply(lambda x: self.guarantee_hierarchical_path(x))
+            print(f'{df["labels"].str.len().sum()- nof_labels} labels are added to the already existing {nof_labels} to match the hierarchical structure.')
 
-        # Split data
-        X_train, X_test, Y_train, Y_test = self.split_data(df)
+
+        # Split data and encode labels
+        X_train, X_test, Y_train, Y_test = self.split_data(df, get_val = False)
+        Y_train, Y_test, _ = self.prepare_targets(Y_train, Y_test)
+ 
 
         # Vectorize tokens based on BOW embedding 
         vectorizer = BowVectorizer()
@@ -160,8 +283,67 @@ class LogRegPreprocessor(Preprocessor):
         dataset_dict = {"X_train": X_train, "X_test": X_test, "Y_train": Y_train, "Y_test": Y_test}
 
         self.store_data(dataset_dict)
+        return X_train, X_test, Y_train, Y_test
 
-        # with open('dataset_dict.pickle', 'wb') as file:
-        #     pickle.dump(dataset_dict, file)
-        # for data, file_name in zip([X_train_bow, X_test_bow, Y_train, Y_test ], ["X_train", "X_test", "Y_train", "Y_test"]):
+
+class BERTPreprocessor(Preprocessor):
+    
+    def get_preprocessed_data(self):
+
+        # Check whether data already exists
+        if self.data_exists and not self.overwrite_data:
+            print('Data already exists and will not be overwritten.')
+            os.makedirs(self.dest_name, exist_ok=True)
+            file = os.path.join(self.dest_name, self.file_name) 
+            with open(file, 'rb') as file:
+                dataset_dict = pickle.load(file)
             
+            if self.split_val:
+                X_train, X_test, X_val, Y_train, Y_test, Y_val = dataset_dict["X_train"], dataset_dict["X_test"], dataset_dict["X_val"] ,dataset_dict["Y_train"], dataset_dict["Y_test"], dataset_dict["Y_val"]
+                return X_train, X_test, X_val, Y_train, Y_test, Y_val
+            
+            else:
+                X_train, X_test, Y_train, Y_test = dataset_dict["X_train"], dataset_dict["X_test"], dataset_dict["Y_train"], dataset_dict["Y_test"]
+                return X_train, X_test, Y_train, Y_test
+
+        
+         # Check whether data already exists
+        elif self.data_exists and self.overwrite_data:
+            print('Data already exists but will be overwritten.')
+
+        df = self.load_dataframe()
+
+        # Load SCB classifications and retrieve unique label for data
+        df_classifications = self.load_classifications()
+        df['labels'] = df['labels'].apply(lambda x: self.get_matching_SCB_class_IDs(x, df_classifications))
+
+        # Filter labels depending on chosen level of classification (in config)
+        if self.select_level_of_classification:
+            df['labels'] = df['labels'].apply(lambda x: self.filter_IDs(x)) 
+
+        nof_labels = df['labels'].str.len().sum()
+        # Add parenting label nodes to match hiearchical structure
+        if self.args.add_parent_nodes:
+            df['labels'] = df['labels'].apply(lambda x: self.guarantee_hierarchical_path(x))
+            print(f'{df["labels"].str.len().sum()- nof_labels} labels are added to the already existing {nof_labels} to match the hierarchical structure.')
+
+        if self.split_val:
+            # Split data and encode labels
+            X_train, X_test, X_val, Y_train, Y_test, Y_val = self.split_data(df, get_val = True)
+            Y_train, Y_test, Y_val = self.prepare_targets(Y_train, Y_test, Y_val)
+
+            dataset_dict = {"X_train": X_train, "X_test": X_test, "X_val": X_val,"Y_train": Y_train, "Y_test": Y_test, "Y_val": Y_val}
+
+            self.store_data(dataset_dict)
+            return X_train, X_test, X_val, Y_train, Y_test, Y_val
+        
+        else:
+            # Split data and encode labels
+            X_train, X_test,  Y_train, Y_test = self.split_data(df, get_val = False)
+            Y_train, Y_test, _= self.prepare_targets(Y_train, Y_test)
+
+            dataset_dict = {"X_train": X_train, "X_test": X_test, "Y_train": Y_train, "Y_test": Y_test}
+            self.store_data(dataset_dict)
+            return X_train, X_test, Y_train, Y_test
+
+  
