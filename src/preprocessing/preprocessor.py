@@ -8,7 +8,7 @@ from config.global_args import GlobalArgs
 from config.data_args import DataArgs
 
 import pandas as pd
-from typing import Any
+from typing import Any, Tuple
 from src.preprocessing.tokenizer import SimpleTokenizer
 from src.preprocessing.vectorizer import BowVectorizer 
 from sklearn.model_selection import train_test_split
@@ -22,6 +22,7 @@ class Preprocessor(ABC):
         select_level_of_classification: bool = False,
         args = None,
         language: str = None,
+        split_val: bool = True,
     ):
         """
         Initializes a Preprocessor.
@@ -51,25 +52,29 @@ class Preprocessor(ABC):
         if isinstance(args, dict):
             self.args.update_from_dict(args)
 
-
+        self.split_val = split_val
+        if self.split_val:
+            split_info = '_val'
+        
         if self.select_level_of_classification:
             info = f'{self.args.digits}_level'
         else:
             info = 'all_levels'
 
-        self.file_name = f"preprocessed_data_{self.language}_{info}.pkl"
+        self.file_name = 'preprocessed_data.pkl'
+        dir_name = f"{model_type}_{self.language}_{info}{split_info}"
+        self.dest_name = self.args.preprocessed_path + dir_name
         self.binarizer_name = f"binarizer_{info}.joblib"
 
     @abstractmethod
-    def get_preprocessed_data(self):
+    def get_preprocessed_data(self) -> Tuple[Any]:
         pass
 
     def data_exists(self) -> bool:
-        dest = self.args.preprocessed_path.join(self.model_type)
-        os.makedirs(dest, exist_ok=True)
-        file = os.path.join(dest, self.file_name) 
+        os.makedirs(self.dest_name, exist_ok=True)
+        file = os.path.join(self.dest_name, self.file_name) 
         if  os.path.isfile(file):
-            print(f"{self.file_name} already exists at {dest}.")
+            print(f"{self.file_name} already exists at {self.dest_name}.")
             return True
         else:
             return False
@@ -109,7 +114,21 @@ class Preprocessor(ABC):
         else:
             print(f"{research_fields} is not a string.")
             return None
+        
+    def guarantee_hierarchical_path(self, IDs: list[int])-> list[int]:
+        for label in IDs:
+            digits = len(str(label))
 
+            if digits >= 3:
+                first_digit = int(str(label)[0])
+                if not first_digit in IDs:
+                    IDs.append(first_digit)
+            elif digits == 5:
+                three_digits = int(str(label)[0:3])
+                if not three_digits in IDs:
+                    IDs.append(three_digits)
+        return IDs
+                    
     def filter_IDs(self, IDs: list[int]) -> list[int]:
         # select IDs depending on the provided classification level 
         return [id for id in IDs if len(str(id)) == self.args.digits]
@@ -141,24 +160,30 @@ class Preprocessor(ABC):
 
         return df
 
-    def split_data(self, df: pd.DataFrame) -> list[pd.DataFrame]:
+    def split_data(self, df: pd.DataFrame, get_val: bool = True) -> list[pd.DataFrame]:
         test_size = self.args.test_size
-
+        validation_size = self.args.validation_size 
         X_train, X_test, Y_train, Y_test  = train_test_split(
             df['text'],
             df['labels'],
             test_size = test_size,
-            shuffle = True,
-            #stratify = df['Research fields'],
+            shuffle = True
         )
 
+        if get_val:
+            X_train, X_val, Y_train, Y_val  = train_test_split(
+                X_train,
+                Y_train,
+                test_size = validation_size,
+                shuffle = True
+            )
+
+            return X_train, X_test, X_val, Y_train, Y_test, Y_val
         return X_train, X_test, Y_train, Y_test
     
-    def prepare_targets(self, Y_train, Y_test):
-
-        dest = self.args.preprocessed_path + self.model_type
-        os.makedirs(dest, exist_ok=True)
-        file = os.path.join(dest, self.binarizer_name) 
+    def prepare_targets(self, Y_train, Y_test, Y_val = None):
+        os.makedirs(self.dest_name, exist_ok=True)
+        file = os.path.join(self.dest_name, self.binarizer_name) 
         
         if os.path.isfile(file):
             # load binarizer from file
@@ -172,27 +197,31 @@ class Preprocessor(ABC):
 
         Y_train = le.transform(Y_train)
         Y_test = le.transform(Y_test)
+        if not Y_val.empty:
+            Y_val = le.transform(Y_val) 
+
         print(f'{len(le.classes_)} classes were encoded by MultiLabelBinarizer.')
 
-        return Y_train, Y_test
+        return Y_train, Y_test, Y_val
 
-    def store_data(self, dataset_dict: dict):
-        dest = self.args.preprocessed_path + self.model_type
-        os.makedirs(dest, exist_ok=True)
-        file = os.path.join(dest, self.file_name) 
+    def store_data(self, data: Any):
+        os.makedirs(self.dest_name, exist_ok=True)
+        file = os.path.join(self.dest_name, self.file_name) 
 
         if not os.path.isfile(file):
-            pickle.dump(dataset_dict, open(file, "wb"))
-            print(f"Saved {self.file_name} at {dest}.")
+            pickle.dump(data, open(file, "wb"))
+            self.save_data_args(self.dest_name)
+            print(f"Saved {self.file_name} at {self.dest_name}.")
 
         elif os.path.isfile(file) and self.overwrite_data:
-            pickle.dump(dataset_dict, open(file, "wb"))
-            print(f"{self.file_name} at {dest} is overwritten.")
+            pickle.dump(data, open(file, "wb"))
+            self.save_data_args(self.dest_name)
+            print(f"{self.file_name} at {self.dest_name} is overwritten.")
             
         else:
-            print(f"{self.file_name} already exists at {dest}.")
+            print(f"{self.file_name} already exists at {self.dest_name}.")
         
-    def save_model_args(self, output_dir):
+    def save_data_args(self, output_dir):
         os.makedirs(output_dir, exist_ok=True)
         self.args.save(output_dir)
 
@@ -207,7 +236,13 @@ class LogRegPreprocessor(Preprocessor):
 
         if self.data_exists and not self.overwrite_data:
             print('Data already exists and will not be overwritten.')
-            return 
+            os.makedirs(self.dest_name, exist_ok=True)
+            file = os.path.join(self.dest_name, self.file_name) 
+            with open(file, 'rb') as file:
+                dataset_dict = pickle.load(file)
+            X_train, X_test, Y_train, Y_test = dataset_dict["X_train"], dataset_dict["X_test"], dataset_dict["Y_train"], dataset_dict["Y_test"]
+            
+            return X_train, X_test, Y_train, Y_test
         
         # Check whether data already exists
         elif self.data_exists and self.overwrite_data:
@@ -226,28 +261,29 @@ class LogRegPreprocessor(Preprocessor):
         # Filter labels depending on chosen level of classification (in config)
         if self.select_level_of_classification:
             df['labels'] = df['labels'].apply(lambda x: self.filter_IDs(x)) 
+        
+        nof_labels = df['labels'].str.len().sum()
 
-        # Split data
-        X_train, X_test, Y_train, Y_test = self.split_data(df)
-        Y_train, Y_test = self.prepare_targets(Y_train, Y_test)
+        # Add parenting label nodes to match hiearchical structure
+        if self.args.add_parent_nodes:
+            df['labels'] = df['labels'].apply(lambda x: self.guarantee_hierarchical_path(x))
+            print(f'{df["labels"].str.len().sum()- nof_labels} labels are added to the already existing {nof_labels} to match the hierarchical structure.')
+
+
+        # Split data and encode labels
+        X_train, X_test, Y_train, Y_test = self.split_data(df, get_val = False)
+        Y_train, Y_test, _ = self.prepare_targets(Y_train, Y_test)
  
 
         # Vectorize tokens based on BOW embedding 
         vectorizer = BowVectorizer()
         X_train = vectorizer.fit_transform(X_train) 
         X_test = vectorizer.transform(X_test)
-        print(X_train)
-        # count_vect = CountVectorizer(ngram_range=(1,2))
-
-        # X_train = count_vect.fit_transform(X_train) 
-        # X_test= count_vect.transform(X_test)
-
-        # X_train = normalize(X_train)
-        # X_test = normalize(X_test)
 
         dataset_dict = {"X_train": X_train, "X_test": X_test, "Y_train": Y_train, "Y_test": Y_test}
 
         self.store_data(dataset_dict)
+        return X_train, X_test, Y_train, Y_test
 
 
 class BERTPreprocessor(Preprocessor):
@@ -257,10 +293,23 @@ class BERTPreprocessor(Preprocessor):
         # Check whether data already exists
         if self.data_exists and not self.overwrite_data:
             print('Data already exists and will not be overwritten.')
-            return 
+            os.makedirs(self.dest_name, exist_ok=True)
+            file = os.path.join(self.dest_name, self.file_name) 
+            with open(file, 'rb') as file:
+                dataset_dict = pickle.load(file)
+            
+            if self.split_val:
+                X_train, X_test, X_val, Y_train, Y_test, Y_val = dataset_dict["X_train"], dataset_dict["X_test"], dataset_dict["X_val"] ,dataset_dict["Y_train"], dataset_dict["Y_test"], dataset_dict["Y_val"]
+                return X_train, X_test, X_val, Y_train, Y_test, Y_val
+            
+            else:
+                X_train, X_test, Y_train, Y_test = dataset_dict["X_train"], dataset_dict["X_test"], dataset_dict["Y_train"], dataset_dict["Y_test"]
+                return X_train, X_test, Y_train, Y_test
+
         
+         # Check whether data already exists
         elif self.data_exists and self.overwrite_data:
-            print('Data already exists and will be overwritten.')
+            print('Data already exists but will be overwritten.')
 
         df = self.load_dataframe()
 
@@ -272,13 +321,29 @@ class BERTPreprocessor(Preprocessor):
         if self.select_level_of_classification:
             df['labels'] = df['labels'].apply(lambda x: self.filter_IDs(x)) 
 
-        # Split data and encode labels
-        X_train, X_test, Y_train, Y_test = self.split_data(df)
-        Y_train, Y_test = self.prepare_targets(Y_train, Y_test)
-        Y_train = pd.Series(Y_train.tolist()) 
-        Y_test = pd.Series(Y_test.tolist()) 
+        nof_labels = df['labels'].str.len().sum()
+        # Add parenting label nodes to match hiearchical structure
+        if self.args.add_parent_nodes:
+            df['labels'] = df['labels'].apply(lambda x: self.guarantee_hierarchical_path(x))
+            print(f'{df["labels"].str.len().sum()- nof_labels} labels are added to the already existing {nof_labels} to match the hierarchical structure.')
 
-        dataset_dict = {"X_train": X_train, "X_test": X_test, "Y_train": Y_train, "Y_test": Y_test}
-        self.store_data(dataset_dict)
+        if self.split_val:
+            # Split data and encode labels
+            X_train, X_test, X_val, Y_train, Y_test, Y_val = self.split_data(df, get_val = True)
+            Y_train, Y_test, Y_val = self.prepare_targets(Y_train, Y_test, Y_val)
+
+            dataset_dict = {"X_train": X_train, "X_test": X_test, "X_val": X_val,"Y_train": Y_train, "Y_test": Y_test, "Y_val": Y_val}
+
+            self.store_data(dataset_dict)
+            return X_train, X_test, X_val, Y_train, Y_test, Y_val
+        
+        else:
+            # Split data and encode labels
+            X_train, X_test,  Y_train, Y_test = self.split_data(df, get_val = False)
+            Y_train, Y_test, _= self.prepare_targets(Y_train, Y_test)
+
+            dataset_dict = {"X_train": X_train, "X_test": X_test, "Y_train": Y_train, "Y_test": Y_test}
+            self.store_data(dataset_dict)
+            return X_train, X_test, Y_train, Y_test
 
   

@@ -68,7 +68,7 @@ def train_model(
         if classification_model.args.evaluate_during_training and eval_df is None:
             raise ValueError(
                 "evaluate_during_training is enabled but eval_df is not specified."
-                " Pass eval_df to classification_model.train_model() if using evaluate_during_training."
+                " Pass eval_df to classification_model.model.train_model() if using evaluate_during_training."
             )
 
         if not output_dir:
@@ -272,32 +272,6 @@ def train(
             num_warmup_steps=args.warmup_steps,
             num_training_steps=t_total,
         )
-
-    elif args.scheduler == "cosine_schedule_with_warmup":
-        scheduler = get_cosine_schedule_with_warmup(
-            optimizer,
-            num_warmup_steps=args.warmup_steps,
-            num_training_steps=t_total,
-            num_cycles=args.cosine_schedule_num_cycles,
-        )
-
-    elif args.scheduler == "cosine_with_hard_restarts_schedule_with_warmup":
-        scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(
-            optimizer,
-            num_warmup_steps=args.warmup_steps,
-            num_training_steps=t_total,
-            num_cycles=args.cosine_schedule_num_cycles,
-        )
-
-    elif args.scheduler == "polynomial_decay_schedule_with_warmup":
-        scheduler = get_polynomial_decay_schedule_with_warmup(
-            optimizer,
-            num_warmup_steps=args.warmup_steps,
-            num_training_steps=t_total,
-            lr_end=args.polynomial_decay_schedule_lr_end,
-            power=args.polynomial_decay_schedule_power,
-        )
-
     else:
         raise ValueError("{} is not a valid scheduler.".format(args.scheduler))
 
@@ -359,7 +333,7 @@ def train(
                 config={**asdict(args)},
                 **args.wandb_kwargs,
             )
-            wandb.run._label(repo="test_code_structure")
+            wandb.run._label(repo="comparison_transformers")
             classification_model.wandb_run_id = wandb.run.id
         wandb.watch(classification_model.model)
 
@@ -615,7 +589,7 @@ def train(
                                         if not classification_model.args.evaluate_during_training
                                         else training_progress_scores,
                                     )
-                    classification_model.train()
+                    model.train()
 
         epoch_number += 1
         output_dir_current = os.path.join(

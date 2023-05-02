@@ -1,7 +1,8 @@
 import torch
 import warnings
 from torch.nn import CrossEntropyLoss
-
+import numpy as np
+import pandas as pd
 
 
 
@@ -24,3 +25,10 @@ def calculate_loss(model, inputs, num_labels, weight, device):
 
         loss = loss_fct(logits.view(-1, num_labels), labels.view(-1))
     return (loss, *outputs[1:])
+
+
+def prepare_df(features: pd.Series, targets: np.ndarray):
+    targets = pd.Series(targets.tolist())
+    df = pd.DataFrame(features)
+    df['labels'] = targets.values
+    return df

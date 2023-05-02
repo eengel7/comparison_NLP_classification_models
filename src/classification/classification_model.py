@@ -87,8 +87,6 @@ MODELS_WITH_ADD_PREFIX_SPACE = [
     "nystromformer",
 ]
 
-MODELS_WITHOUT_SLIDING_WINDOW_SUPPORT = ["squeezebert"]
-
 
 class ClassificationModel:
     def __init__(
@@ -220,14 +218,6 @@ class ClassificationModel:
         elif isinstance(args, ClassificationArgs):
             self.args = args
 
-        if (
-            model_type in MODELS_WITHOUT_SLIDING_WINDOW_SUPPORT
-            and self.args.sliding_window
-        ):
-            raise ValueError(
-                "{} does not currently support sliding window".format(model_type)
-            )
-
         #Sets the number of threads used for intraop parallelism on CPU.
         if self.args.thread_count:
             torch.set_num_threads(self.args.thread_count)
@@ -306,48 +296,10 @@ class ClassificationModel:
         else:
             self.device = "cpu"
 
-        if self.args.onnx:
-            from onnxruntime import InferenceSession, SessionOptions
-
-            if not onnx_execution_provider:
-                onnx_execution_provider = (
-                    "CUDAExecutionProvider" if use_cuda else "CPUExecutionProvider"
-                )
-
-            options = SessionOptions()
-
-            if self.args.dynamic_quantize:
-                model_path = quantize(Path(os.path.join(model_name, "onnx_model.onnx")))
-                self.model = InferenceSession(
-                    model_path.as_posix(), options, providers=[onnx_execution_provider]
-                )
-            else:
-                model_path = os.path.join(model_name, "onnx_model.onnx")
-                self.model = InferenceSession(
-                    model_path, options, providers=[onnx_execution_provider]
-                )
-        else:
-            if not self.args.quantized_model:
-                self.model = model_class.from_pretrained(
-                    model_name, config=self.config, **kwargs
-                )
-            else:
-                quantized_weights = torch.load(
-                    os.path.join(model_name, "pytorch_model.bin")
-                )
-
-                self.model = model_class.from_pretrained(
-                    None, config=self.config, state_dict=quantized_weights
-                )
-
-            if self.args.dynamic_quantize:
-                self.model = torch.quantization.quantize_dynamic(
-                    self.model, {torch.nn.Linear}, dtype=torch.qint8
-                )
-            if self.args.quantized_model:
-                self.model.load_state_dict(quantized_weights)
-            if self.args.dynamic_quantize:
-                self.args.quantized_model = True
+        self.model = model_class.from_pretrained(
+            model_name, config=self.config, **kwargs
+        )
+        
 
         self.results = {}
 
@@ -380,13 +332,6 @@ class ClassificationModel:
         self.args.model_type = model_type
         self.args.tokenizer_name = tokenizer_name
         self.args.tokenizer_type = tokenizer_type
-
-        if model_type in ["camembert", "xlmroberta"]:
-            warnings.warn(
-                f"use_multiprocessing automatically disabled as {model_type}"
-                " fails when using multiprocessing for feature conversion."
-            )
-            self.args.use_multiprocessing = False
 
         if self.args.wandb_project and not wandb_available:
             warnings.warn(
@@ -554,110 +499,41 @@ class ClassificationModel:
                     eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size
                 )
 
-                if self.config.output_hidden_states:
+                n_batches = len(eval_dataloader)
+                for i, batch in enumerate(tqdm(eval_dataloader, disable=args.silent)):
                     model.eval()
-                    preds = None
-                    out_label_ids = None
-                    for i, batch in enumerate(
-                        tqdm(
-                            eval_dataloader, disable=args.silent, desc="Running Prediction"
+                    # batch = tuple(t.to(device) for t in batch)
+
+                    with torch.no_grad():
+                        inputs = self._get_inputs_dict(batch, no_hf=True)
+                        outputs = calculate_loss(
+                            model,
+                            inputs,
+                            weight=self.weight,
+                            num_labels=self.num_labels,
+                            device=self.device,
                         )
-                    ):
-                        # batch = tuple(t.to(self.device) for t in batch)
-                        with torch.no_grad():
-                            inputs = self._get_inputs_dict(batch, no_hf=True)
+                        tmp_eval_loss, logits = outputs[:2]
 
-                            
-                            outputs = calculate_loss(
-                                model,
-                                inputs,
-                                weight=self.weight,
-                                num_labels=self.num_labels,
-                                device=self.device,
-                            )
-                            tmp_eval_loss, logits = outputs[:2]
-                            embedding_outputs, layer_hidden_states = (
-                                outputs[2][0],
-                                outputs[2][1:],
-                            )
+                        if multi_label:
+                            logits = logits.sigmoid()
 
-                            if multi_label:
-                                logits = logits.sigmoid()
+                        if self.args.n_gpu > 1:
+                            tmp_eval_loss = tmp_eval_loss.mean()
+                        eval_loss += tmp_eval_loss.item()
 
-                            if self.args.n_gpu > 1:
-                                tmp_eval_loss = tmp_eval_loss.mean()
-                            eval_loss += tmp_eval_loss.item()
+                    nb_eval_steps += 1
 
-                        nb_eval_steps += 1
-
-                        if preds is None:
-                            preds = logits.detach().cpu().numpy()
-                            out_label_ids = inputs["labels"].detach().cpu().numpy()
-                            all_layer_hidden_states = np.array(
-                                [
-                                    state.detach().cpu().numpy()
-                                    for state in layer_hidden_states
-                                ]
-                            )
-                            all_embedding_outputs = embedding_outputs.detach().cpu().numpy()
-                        else:
-                            preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
-                            out_label_ids = np.append(
-                                out_label_ids,
-                                inputs["labels"].detach().cpu().numpy(),
-                                axis=0,
-                            )
-                            all_layer_hidden_states = np.append(
-                                all_layer_hidden_states,
-                                np.array(
-                                    [
-                                        state.detach().cpu().numpy()
-                                        for state in layer_hidden_states
-                                    ]
-                                ),
-                                axis=1,
-                            )
-                            all_embedding_outputs = np.append(
-                                all_embedding_outputs,
-                                embedding_outputs.detach().cpu().numpy(),
-                                axis=0,
-                            )
-                else:
-                    n_batches = len(eval_dataloader)
-                    for i, batch in enumerate(tqdm(eval_dataloader, disable=args.silent)):
-                        model.eval()
-                        # batch = tuple(t.to(device) for t in batch)
-
-                        with torch.no_grad():
-                            inputs = self._get_inputs_dict(batch, no_hf=True)
-                            outputs = calculate_loss(
-                                model,
-                                inputs,
-                                weight=self.weight,
-                                num_labels=self.num_labels,
-                                device=self.device,
-                            )
-                            tmp_eval_loss, logits = outputs[:2]
-
-                            if multi_label:
-                                logits = logits.sigmoid()
-
-                            if self.args.n_gpu > 1:
-                                tmp_eval_loss = tmp_eval_loss.mean()
-                            eval_loss += tmp_eval_loss.item()
-
-                        nb_eval_steps += 1
-
-                        start_index = self.args.eval_batch_size * i
-                        end_index = (
-                            start_index + self.args.eval_batch_size
-                            if i != (n_batches - 1)
-                            else len(eval_dataset)
-                        )
-                        preds[start_index:end_index] = logits.detach().cpu().numpy()
-                        out_label_ids[start_index:end_index] = (
-                            inputs["labels"].detach().cpu().numpy()
-                        )
+                    start_index = self.args.eval_batch_size * i
+                    end_index = (
+                        start_index + self.args.eval_batch_size
+                        if i != (n_batches - 1)
+                        else len(eval_dataset)
+                    )
+                    preds[start_index:end_index] = logits.detach().cpu().numpy()
+                    out_label_ids[start_index:end_index] = (
+                        inputs["labels"].detach().cpu().numpy()
+                    )
 
                 eval_loss = eval_loss / nb_eval_steps
 
@@ -690,10 +566,8 @@ class ClassificationModel:
                 }
                 preds = [inverse_labels_map[pred] for pred in preds]
 
-            if self.config.output_hidden_states:
-                return preds, model_outputs, all_embedding_outputs, all_layer_hidden_states
-            else:
-                return preds, model_outputs
+
+            return preds, model_outputs
 
 
     def convert_to_onnx(self, output_dir=None, set_onnx_arg=True):

@@ -3,7 +3,7 @@ import os
 import warnings
 from collections import Counter
 from dataclasses import asdict
-
+from sklearn import metrics
 import numpy as np
 import torch
 from scipy.special import softmax
@@ -13,8 +13,7 @@ from sklearn.metrics import (auc, average_precision_score, confusion_matrix,
 from torch.utils.data import DataLoader, SequentialSampler
 from tqdm import tqdm
 
-from src.classification.classification_utils import (InputExample,
-                                                     load_hf_dataset)
+from src.classification.classification_utils import InputExample
 from src.utils import calculate_loss
 
 try:
@@ -99,39 +98,25 @@ def evaluate(
     eval_output_dir = output_dir
 
     results = {}
-    if classification_model.args.use_hf_datasets:
-        if classification_model.args.sliding_window:
-            raise ValueError(
-                "HuggingFace Datasets cannot be used with sliding window."
-            )
-        eval_dataset = load_hf_dataset(
-            eval_df, classification_model.tokenizer, classification_model.args, multi_label=multi_label
+
+    if "text" in eval_df.columns and "labels" in eval_df.columns:
+        eval_examples = (
+            eval_df["text"].astype(str).tolist(),
+            eval_df["labels"].tolist(),
         )
-        eval_examples = None
     else:
+        warnings.warn(
+            "Dataframe headers not specified. Falling back to using column 0 as text and column 1 as labels."
+        )
+        eval_examples = (
+            eval_df.iloc[:, 0].astype(str).tolist(),
+            eval_df.iloc[:, 1].tolist(),
+        )
 
-        if "text" in eval_df.columns and "labels" in eval_df.columns:
-            eval_examples = (
-                eval_df["text"].astype(str).tolist(),
-                eval_df["labels"].tolist(),
-            )
-        else:
-            warnings.warn(
-                "Dataframe headers not specified. Falling back to using column 0 as text and column 1 as labels."
-            )
-            eval_examples = (
-                eval_df.iloc[:, 0].astype(str).tolist(),
-                eval_df.iloc[:, 1].tolist(),
-            )
 
-        if args.sliding_window:
-            eval_dataset, window_counts = classification_model.load_and_cache_examples(
-                eval_examples, evaluate=True, verbose=verbose, silent=silent
-            )
-        else:
-            eval_dataset = classification_model.load_and_cache_examples(
-                eval_examples, evaluate=True, verbose=verbose, silent=silent
-            )
+    eval_dataset = classification_model.load_and_cache_examples(
+        eval_examples, evaluate=True, verbose=verbose, silent=silent
+    )
     os.makedirs(eval_output_dir, exist_ok=True)
 
     eval_sampler = SequentialSampler(eval_dataset)
@@ -191,54 +176,9 @@ def evaluate(
             inputs["labels"].detach().cpu().numpy()
         )
 
-        # if preds is None:
-        #     preds = logits.detach().cpu().numpy()
-        #     out_label_ids = inputs["labels"].detach().cpu().numpy()
-        # else:
-        #     preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
-        #     out_label_ids = np.append(out_label_ids, inputs["labels"].detach().cpu().numpy(), axis=0)
-
     eval_loss = eval_loss / nb_eval_steps
 
-    if args.sliding_window:
-        count = 0
-        window_ranges = []
-        for n_windows in window_counts:
-            window_ranges.append([count, count + n_windows])
-            count += n_windows
-
-        preds = [
-            preds[window_range[0] : window_range[1]]
-            for window_range in window_ranges
-        ]
-        out_label_ids = [
-            out_label_ids[i]
-            for i in range(len(out_label_ids))
-            if i in [window[0] for window in window_ranges]
-        ]
-
-        model_outputs = preds
-        if args.regression is True:
-            preds = [np.squeeze(pred) for pred in preds]
-            final_preds = []
-            for pred_row in preds:
-                mean_pred = np.mean(pred_row)
-                print(mean_pred)
-                final_preds.append(mean_pred)
-        else:
-            preds = [np.argmax(pred, axis=1) for pred in preds]
-            final_preds = []
-            for pred_row in preds:
-                val_freqs_desc = Counter(pred_row).most_common()
-                if (
-                    len(val_freqs_desc) > 1
-                    and val_freqs_desc[0][1] == val_freqs_desc[1][1]
-                ):
-                    final_preds.append(args.tie_value)
-                else:
-                    final_preds.append(val_freqs_desc[0][0])
-        preds = np.array(final_preds)
-    elif not multi_label and args.regression is True:
+    if not multi_label and args.regression is True:
         preds = np.squeeze(preds)
         model_outputs = preds
     else:
@@ -270,7 +210,7 @@ def evaluate(
                 config={**asdict(args)},
                 **args.wandb_kwargs,
             )
-            wandb.run._label(repo="simpletransformers")
+            wandb.run._label(repo="comparison_transformers")
         if not args.labels_map:
             classification_model.args.labels_map = {i: i for i in range(classification_model.num_labels)}
 
@@ -289,7 +229,7 @@ def evaluate(
         )
 
         if not classification_model.args.sliding_window:
-            # ROC`
+        # ROC`
             wandb.log({"roc": wandb.plots.ROC(truth, model_outputs, labels_list)})
 
             # Precision Recall
@@ -301,42 +241,26 @@ def evaluate(
                 }
             )
         
-        if (
+        
+    if (
         classification_model.args.wandb_project
         and wandb_log
         and multi_label
         and not classification_model.args.regression
-        ):
-            if not wandb.setup().settings.sweep_id:
-                logger.info(" Initializing WandB run for evaluation.")
-                wandb.init(
-                    project=args.wandb_project,
-                    config={**asdict(args)},
-                    **args.wandb_kwargs,
-                )
-                wandb.run._label(repo="simpletransformers")
-            if not args.labels_map:
-                classification_model.args.labels_map = {i: i for i in range(classification_model.num_labels)}
+    ):
+        if not wandb.setup().settings.sweep_id:
+            logger.info(" Initializing WandB run for evaluation.")
+            wandb.init(
+                project=args.wandb_project,
+                config={**asdict(args)},
+                **args.wandb_kwargs,
+            )
+            wandb.run._label(repo="comparison_transformers")
+        # ROC`
+        wandb.log({"LRAP": wandb.plots.ROC(truth, model_outputs, labels_list)})
 
-            labels_list = sorted(list(classification_model.args.labels_map.keys()))
-            inverse_labels_map = {
-                value: key for key, value in classification_model.args.labels_map.items()
-            }
-
-            truth = [inverse_labels_map[out] for out in out_label_ids]
-
-            if not classification_model.args.sliding_window:
-                # ROC`
-                wandb.log({"LRAP": wandb.plots.ROC(truth, model_outputs, labels_list)})
-
-                # Precision Recall
-                wandb.log(
-                    {
-                        "pr": wandb.plots.precision_recall(
-                            truth, model_outputs, labels_list
-                        )
-                    }
-                )
+        # log to wandd
+        wandb.log(result)
 
     return results, model_outputs, wrong
 
@@ -379,56 +303,52 @@ def compute_metrics(
         if multi_label:
             threshold_values = classification_model.args.threshold if classification_model.args.threshold else 0.5
             if isinstance(threshold_values, list):
-                mismatched = labels != [
+                preds_thresholded = [
                     [
                         classification_model._threshold(pred, threshold_values[i])
                         for i, pred in enumerate(example)
                     ]
                     for example in preds
                 ]
+                mismatched = labels != preds_thresholded
             else:
-                mismatched = labels != [
+                preds_thresholded = [
                     [classification_model._threshold(pred, threshold_values) for pred in example]
                     for example in preds
-                ]
+                ] 
+                mismatched = labels != preds_thresholded
         else:
             mismatched = labels != preds
+        
+
 
         if eval_examples:
             if not isinstance(eval_examples[0], InputExample):
-                if len(eval_examples) == 2:
-                    # Single sentence task
-                    eval_examples = [
-                        InputExample(
-                            guid=i,
-                            text_a=example,
-                            text_b=None,
-                            label=label,
-                        )
-                        for i, (example, label) in enumerate(
-                            zip(eval_examples[0], eval_examples[1])
-                        )
-                    ]
-                elif len(eval_examples) == 3:
-                    # Sentence pair task
-                    eval_examples = [
-                        InputExample(
-                            guid=i,
-                            text_a=example_a,
-                            text_b=example_b,
-                            label=label,
-                        )
-                        for i, (example_a, example_b, label) in enumerate(
-                            zip(eval_examples[0], eval_examples[1], eval_examples[2])
-                        )
-                    ]
+                
+                # Single sentence task
+                eval_examples = [
+                    InputExample(
+                        guid=i,
+                        text_a=example,
+                        text_b=None,
+                        label=label,
+                    )
+                    for i, (example, label) in enumerate(
+                        zip(eval_examples[0], eval_examples[1])
+                    )
+                ]
+                
             wrong = [i for (i, v) in zip(eval_examples, mismatched) if v.any()]
         else:
             wrong = ["NA"]
 
         if multi_label:
             label_ranking_score = label_ranking_average_precision_score(labels, preds)
-            return {**{"LRAP": label_ranking_score}, **extra_metrics}, wrong
+            f1_score_avg = metrics.f1_score(labels, preds_thresholded, average='samples') 
+            f1_score_macro = metrics.f1_score(labels, preds_thresholded, average='macro')
+            f1_score_micro = metrics.f1_score(labels, preds_thresholded, average='micro')
+
+            return {**{"LRAP": label_ranking_score, "f1_score_avg": f1_score_avg, "f1_score_macro": f1_score_macro, "f1_score_micro": f1_score_micro }, **extra_metrics}, wrong
         elif classification_model.args.regression:
             return {**extra_metrics}, wrong
 
