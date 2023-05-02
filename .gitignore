@@ -139,6 +139,6 @@ events.*
 # wandb ouput
 wandb/
 
-data/preprocessed_*
+data/preprocessed/
 wandb/latest-run
 reports/
