@@ -11,9 +11,6 @@ def calculate_loss(model, inputs, num_labels, weight, device):
     if weight:
         loss_fct = CrossEntropyLoss(weight=torch.Tensor(weight).to(device))
     else:
-        warnings.warn(
-            f"No weights set for cross entropy loss."
-        )
         loss_fct = None
         
     outputs = model(**inputs)

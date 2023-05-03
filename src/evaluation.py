@@ -340,9 +340,9 @@ def compute_metrics(
 
         if multi_label:
             label_ranking_score = label_ranking_average_precision_score(labels, preds)
-            f1_score_avg = metrics.f1_score(labels, preds_thresholded, average='samples') 
-            f1_score_macro = metrics.f1_score(labels, preds_thresholded, average='macro')
-            f1_score_micro = metrics.f1_score(labels, preds_thresholded, average='micro')
+            f1_score_avg = metrics.f1_score(labels, preds_thresholded, average='samples', zero_division=0) 
+            f1_score_macro = metrics.f1_score(labels, preds_thresholded, average='macro', zero_division=0)
+            f1_score_micro = metrics.f1_score(labels, preds_thresholded, average='micro', zero_division=0)
 
             return {**{"LRAP": label_ranking_score, "f1_score_avg": f1_score_avg, "f1_score_macro": f1_score_macro, "f1_score_micro": f1_score_micro }, **extra_metrics}, wrong
         elif classification_model.args.regression:

@@ -52,7 +52,6 @@ class ModelArgs:
     evaluate_during_training_steps: int = 2000
     evaluate_during_training_verbose: bool = True
     evaluate_each_epoch: bool = True
-    fp16: bool = True
     gradient_accumulation_steps: int = 1
     learning_rate: float = 4e-5
     local_rank: int = -1
@@ -61,7 +60,7 @@ class ModelArgs:
     loss_args: dict = field(default_factory=dict)
     manual_seed: int = 42
     max_grad_norm: float = 1.0
-    max_seq_length: int = 128
+    max_seq_length: int = 512
     model_name: str = None
     model_type: str = None
     multiprocessing_chunksize: int = -1
@@ -79,7 +78,7 @@ class ModelArgs:
     quantized_model: bool = False
     reprocess_input_data: bool = True
     save_best_model: bool = True
-    save_eval_checkpoints: bool = True
+    save_eval_checkpoints: bool = False
     save_model_every_epoch: bool = True
     save_optimizer_and_scheduler: bool = True
     save_steps: int = 2000
@@ -93,9 +92,9 @@ class ModelArgs:
     train_batch_size: int = 8
     train_custom_parameters_only: bool = False
     use_cached_eval_features: bool = False
-    use_early_stopping: bool = False
+    use_early_stopping: bool = True
     use_hf_datasets: bool = False
-    use_multiprocessing: bool = False
+    use_multiprocessing: bool = True
     use_multiprocessing_for_evaluation: bool = False
     wandb_kwargs: dict = field(default_factory=dict)
     wandb_project: str = None
