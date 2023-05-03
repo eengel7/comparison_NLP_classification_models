@@ -456,7 +456,7 @@ def train(
                         training_progress_scores[key].append(results[key])
 
                     if test_df is not None:
-                        test_results, _, _ = classification_model.eval_model(
+                        test_results, _, _ = eval_model(classification_model,
                             test_df,
                             verbose=verbose
                             and args.evaluate_during_training_verbose,
@@ -603,7 +603,7 @@ def train(
             classification_model.save_model(output_dir_current, optimizer, scheduler, model=model)
 
         if args.evaluate_during_training and args.evaluate_each_epoch:
-            results, _, _ = classification_model.eval_model(
+            results, _, _ = eval_model(classification_model,
                 eval_df,
                 verbose=verbose and args.evaluate_during_training_verbose,
                 silent=args.evaluate_during_training_silent,
@@ -620,7 +620,7 @@ def train(
             for key in results:
                 training_progress_scores[key].append(results[key])
             if test_df is not None:
-                test_results, _, _ = classification_model.eval_model(
+                test_results, _, _ = eval_model(classification_model,
                     test_df,
                     verbose=verbose and args.evaluate_during_training_verbose,
                     silent=args.evaluate_during_training_silent,
@@ -767,6 +767,9 @@ def _create_training_progress_scores(classification_model, multi_label, **kwargs
             "LRAP": [],
             "train_loss": [],
             "eval_loss": [],
+            "f1_score_avg": [],  
+            "f1_score_macro": [], 
+            "f1_score_micro": [], 
             **extra_metrics,
         }
     else:

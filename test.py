@@ -31,8 +31,9 @@ eval_df.columns = ["text", "labels"]
 
 # Optional model configuration
 model_args = MultiLabelClassificationArgs(num_train_epochs=2, use_multiprocessing = False,
-                                          wandb_project ='multi_label_transformer', 
-                                          wandb_kwargs = {"name": 'bert'},)
+                                          wandb_project ='test_run', 
+                                          wandb_kwargs = {"name": 'bert'},
+                                          evaluate_during_training= True)
 
 
 # Create a MultiLabelClassificationModel
@@ -45,7 +46,7 @@ model = MultiLabelClassificationModel(
 )
 
 # Train the model ,f1_score_micro = metrics.f1_score(average='micro'), f1_score_macro = metrics.f1_score(average='macro')
-train_model(model, train_df)
+train_model(model, train_df, eval_df = eval_df)
 
 # Evaluate the model
 result, model_outputs, wrong_predictions = eval_model(model,

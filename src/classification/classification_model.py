@@ -98,7 +98,7 @@ class ClassificationModel:
         num_labels=None,
         weight=None,
         args=None,
-        use_cuda= False,
+        use_cuda= True,
         cuda_device=-1,
         onnx_execution_provider=None,
         **kwargs,
@@ -289,12 +289,11 @@ class ClassificationModel:
                 else:
                     self.device = torch.device(f"cuda:{cuda_device}")
             else:
-                raise ValueError(
+                self.device = "cpu"
+                print(
                     "'use_cuda' set to True when cuda is unavailable."
                     " Make sure CUDA is available or set use_cuda=False."
                 )
-        else:
-            self.device = "cpu"
 
         self.model = model_class.from_pretrained(
             model_name, config=self.config, **kwargs

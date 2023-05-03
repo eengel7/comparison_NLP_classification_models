@@ -246,7 +246,6 @@ def evaluate(
         classification_model.args.wandb_project
         and wandb_log
         and multi_label
-        and not classification_model.args.regression
     ):
         if not wandb.setup().settings.sweep_id:
             logger.info(" Initializing WandB run for evaluation.")
@@ -256,10 +255,7 @@ def evaluate(
                 **args.wandb_kwargs,
             )
             wandb.run._label(repo="comparison_transformers")
-        # ROC`
-        wandb.log({"LRAP": wandb.plots.ROC(truth, model_outputs, labels_list)})
-
-        # log to wandd
+        # log to wandb
         wandb.log(result)
 
     return results, model_outputs, wrong
