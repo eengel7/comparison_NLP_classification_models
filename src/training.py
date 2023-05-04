@@ -607,7 +607,7 @@ def train(
                 eval_df,
                 verbose=verbose and args.evaluate_during_training_verbose,
                 silent=args.evaluate_during_training_silent,
-                wandb_log=True,
+                wandb_log=False,
                 **kwargs,
             )
 
