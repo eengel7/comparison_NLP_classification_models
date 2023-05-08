@@ -12,6 +12,7 @@ from pathlib import Path
 
 from scipy.stats import mode
 from tqdm.auto import tqdm
+from src.computing_flops import TransformerHparams
 from src.utils import calculate_loss
 import numpy as np
 import torch
@@ -378,9 +379,17 @@ class ClassificationModel:
         )
         return dataset
     
-    def get_floating_point_ops(self, ):
+    def get_infer_flops_multi_label(self):
 
-        return None
+        hparams = TransformerHparams(h = self.config.hidden_size, 
+                           l = self.config.num_hidden_layers, 
+                           s = self.args.max_seq_length, 
+                           num_labels= self.num_labels,
+                           )
+        
+        infer_flops = hparams.get_infer_flops_multi_label()
+
+        return infer_flops
 
 
     def predict(self, to_predict, multi_label=False):

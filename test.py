@@ -30,31 +30,28 @@ eval_df = pd.DataFrame(eval_data)
 eval_df.columns = ["text", "labels"]
 
 # Optional model configuration
-model_args = MultiLabelClassificationArgs(num_train_epochs=2, use_multiprocessing = False,
-                                          wandb_project ='test_run', 
-                                          wandb_kwargs = {"name": 'bert'},
-                                          evaluate_during_training= True)
+model_args = MultiLabelClassificationArgs(num_train_epochs=1, use_multiprocessing = False)
 
 
 # Create a MultiLabelClassificationModel
 model = MultiLabelClassificationModel(
-    "roberta",
-    "roberta-base",
+    "bert",
+    "bert-base-uncased",
     num_labels=3,
     args=model_args,
     
 )
 
 # Train the model ,f1_score_micro = metrics.f1_score(average='micro'), f1_score_macro = metrics.f1_score(average='macro')
-train_model(model, train_df, eval_df = eval_df)
+# train_model(model, train_df, eval_df = eval_df)
 
 # Evaluate the model
-result, model_outputs, wrong_predictions = eval_model(model,
-    eval_df,
-)
+# result, model_outputs, wrong_predictions = eval_model(model
+# )
 
 # # Make predictions with the model
+#predictions, raw_outputs = predict(model, ["Sam"], multi_label=True)
 
-predictions, raw_outputs = model.predict(["Sam"])
+#print(predictions,raw_outputs)
 
-print(predictions,raw_outputs)
+print(f"Number of FLOPs for inference: {model.get_infer_flops_multi_label()}")
