@@ -14,20 +14,25 @@ SIGMOID_FLOPS = 4
 class TransformerHparams(object):
     """Computes the train/inference FLOPs for transformers."""
 
-    def __init__(self, h, l, s=512, v=30522, e=None, i=None, heads=None,
-        head_size=None, output_frac=0.15625, sparse_embed_lookup=False,
-        decoder=False, num_labels = 305):
+    def __init__(self, h, l, s=512, v=30522, e=None, i=None, heads=None, head_size=None, output_frac=0.15625, sparse_embed_lookup=False, decoder=False, num_labels = 305):
         self.h = h  # hidden size
         self.l = l  # number of layers
         self.s = s  # sequence length
-        self.v = v  # vocab size
-        self.e = h if e is None else e  # embedding size
-        self.i = h * 4 if i is None else i  # intermediate size
-        self.kqv = h if head_size is None else head_size * heads  # attn proj sizes
-        self.heads = max(h // 64, 1) if heads is None else heads  # attention heads
-        self.output_frac = output_frac  # percent of tokens using an output softmax
-        self.sparse_embed_lookup = sparse_embed_lookup  # sparse embedding lookups
-        self.decoder = decoder  # decoder has extra attn to encoder states
+        self.v = v  # vocab size 
+        self.e = h if e is None else e  #embedding size
+        self.i = h*4 if i is None else i  #intermediate size
+
+        # attn proj sizes
+        self.kqv = h if head_size is None else head_size * heads  
+        # attention heads
+        self.heads = max(h // 64, 1) if heads is None else heads 
+        # percent of tokens using an output softmax
+        self.output_frac = output_frac  
+        # sparse embedding lookups
+        self.sparse_embed_lookup = sparse_embed_lookup  
+        # decoder has extra attn to encoder states
+        self.decoder = decoder  
+        # number of labels for multi-label/multi-class classification
         self.num_labels = num_labels
 
     def get_block_flops(self):

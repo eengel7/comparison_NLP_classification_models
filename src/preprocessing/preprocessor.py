@@ -197,7 +197,7 @@ class Preprocessor(ABC):
 
         Y_train = le.transform(Y_train)
         Y_test = le.transform(Y_test)
-        if not Y_val.empty:
+        if isinstance(Y_val, pd.Series):
             Y_val = le.transform(Y_val) 
 
         print(f'{len(le.classes_)} classes were encoded by MultiLabelBinarizer.')
@@ -234,7 +234,7 @@ class LogRegPreprocessor(Preprocessor):
 
     def get_preprocessed_data(self):
 
-        if self.data_exists and not self.overwrite_data:
+        if self.data_exists() and not self.overwrite_data:
             print('Data already exists and will not be overwritten.')
             os.makedirs(self.dest_name, exist_ok=True)
             file = os.path.join(self.dest_name, self.file_name) 
@@ -245,7 +245,7 @@ class LogRegPreprocessor(Preprocessor):
             return X_train, X_test, Y_train, Y_test
         
         # Check whether data already exists
-        elif self.data_exists and self.overwrite_data:
+        elif self.data_exists() and self.overwrite_data:
             print('Data already exists but will be overwritten.')
 
         # Prepare data
@@ -291,7 +291,7 @@ class BERTPreprocessor(Preprocessor):
     def get_preprocessed_data(self):
 
         # Check whether data already exists
-        if self.data_exists and not self.overwrite_data:
+        if self.data_exists() and not self.overwrite_data:
             print('Data already exists and will not be overwritten.')
             os.makedirs(self.dest_name, exist_ok=True)
             file = os.path.join(self.dest_name, self.file_name) 
@@ -308,7 +308,7 @@ class BERTPreprocessor(Preprocessor):
 
         
          # Check whether data already exists
-        elif self.data_exists and self.overwrite_data:
+        elif self.data_exists() and self.overwrite_data:
             print('Data already exists but will be overwritten.')
 
         df = self.load_dataframe()
