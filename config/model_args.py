@@ -22,6 +22,8 @@ def get_special_tokens():
 
 @dataclass
 class ModelArgs:
+    manual_seed: int = 42
+
     adafactor_beta1: float = None
     adafactor_clip_threshold: float = 1.0
     adafactor_decay_rate: float = -0.8
@@ -31,7 +33,7 @@ class ModelArgs:
     adafactor_warmup_init: bool = True
     adam_betas: tuple = field(default_factory=lambda: (0.9, 0.999))
     adam_epsilon: float = 1e-8
-    best_model_dir: str = "outputs/best_model"
+    best_model_dir: str = f"outputs/{manual_seed}/best_model"
     cache_dir: str = "cache_dir/"
     config: dict = field(default_factory=dict)
     cosine_schedule_num_cycles: float = 0.5
@@ -58,7 +60,6 @@ class ModelArgs:
     logging_steps: int = 50
     loss_type: str = None
     loss_args: dict = field(default_factory=dict)
-    manual_seed: int = 42
     max_grad_norm: float = 1.0
     max_seq_length: int = 512
     model_name: str = None
@@ -70,7 +71,7 @@ class ModelArgs:
     not_saved_args: list = field(default_factory=list)
     num_train_epochs: int = 1
     optimizer: str = "AdamW"
-    output_dir: str = "outputs/"
+    output_dir: str = f"outputs/{manual_seed}/"
     overwrite_output_dir: bool = True
     polynomial_decay_schedule_lr_end: float = 1e-7
     polynomial_decay_schedule_power: float = 1.0

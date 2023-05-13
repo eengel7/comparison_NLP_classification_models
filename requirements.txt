@@ -6,7 +6,6 @@ mayavi==4.8.1
 networkx==3.0
 nltk==3.8.1
 numpy==1.23.5
-omegaconf==2.3.0
 pandas==1.5.3
 scikit_learn==1.2.1
 scipy==1.10.1

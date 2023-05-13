@@ -4,7 +4,6 @@ from abc import ABC, abstractmethod
 import random
 import numpy as np
 import joblib
-from config.global_args import GlobalArgs
 from config.data_args import DataArgs
 
 import pandas as pd
@@ -35,12 +34,16 @@ class Preprocessor(ABC):
         """
         # self.args = self._load_model_args(model_type), TODO: check or just delete this part
         self.args = DataArgs()
+
+        if isinstance(args, dict):
+            self.args.update_from_dict(args)
+
         self.model_type = model_type
         self.overwrite_data = overwrite_data
         self.select_level_of_classification = select_level_of_classification
         
-        if GlobalArgs.manual_seed:
-            self.random_seed = GlobalArgs.random_seed
+        if isinstance(self.args.random_seed, int):
+            self.random_seed = self.args.random_seed
             random.seed(self.random_seed)
             np.random.seed(self.random_seed)
 
@@ -49,8 +52,7 @@ class Preprocessor(ABC):
         else:
             self.language = self.args.language
 
-        if isinstance(args, dict):
-            self.args.update_from_dict(args)
+        
 
         self.split_val = split_val
         if self.split_val:
@@ -103,7 +105,7 @@ class Preprocessor(ABC):
             for field in research_fields:
                 
                 class_id = df_classifications.index[df_classifications[f'Label_{self.language}'] == field][:] 
-                if field =='unclassified':
+                if field in ['unclassified', 'oklassificerad']:
                     pass
                 elif not class_id.empty:
                     class_IDs.extend(class_id.values[:])
@@ -116,6 +118,8 @@ class Preprocessor(ABC):
             return None
         
     def guarantee_hierarchical_path(self, IDs: list[int])-> list[int]:
+
+        IDs = IDs.copy()
         for label in IDs:
             digits = len(str(label))
 
@@ -146,6 +150,7 @@ class Preprocessor(ABC):
             df["text"] = df[f'title_{self.language}'].astype(str) + df[f'description_{self.language}']
 
         df = self.clean_df(df)  
+
         return df[['text','labels']]
 
     def clean_df(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -156,18 +161,20 @@ class Preprocessor(ABC):
         df = df[df['labels'] != 'Unclassified']
 
         word_counts = df[['text']].apply(lambda x: len(' '.join(x).split()), axis=1)
-        df = df[word_counts >= GlobalArgs.min_words]
+        df = df[word_counts >= self.args.min_words]
 
         return df
 
     def split_data(self, df: pd.DataFrame, get_val: bool = True) -> list[pd.DataFrame]:
         test_size = self.args.test_size
         validation_size = self.args.validation_size 
+        print(f'Random seed {self.random_seed} is used for splitting the data.')
         X_train, X_test, Y_train, Y_test  = train_test_split(
             df['text'],
             df['labels'],
             test_size = test_size,
-            shuffle = True
+            shuffle = True,
+            random_state= self.random_seed
         )
 
         if get_val:
@@ -175,7 +182,8 @@ class Preprocessor(ABC):
                 X_train,
                 Y_train,
                 test_size = validation_size,
-                shuffle = True
+                shuffle = True,
+                random_state= self.random_seed
             )
 
             return X_train, X_test, X_val, Y_train, Y_test, Y_val
@@ -262,13 +270,12 @@ class LogRegPreprocessor(Preprocessor):
         if self.select_level_of_classification:
             df['labels'] = df['labels'].apply(lambda x: self.filter_IDs(x)) 
         
-        nof_labels = df['labels'].str.len().sum()
 
         # Add parenting label nodes to match hiearchical structure
         if self.args.add_parent_nodes:
+            nof_labels = df['labels'].str.len().sum()
             df['labels'] = df['labels'].apply(lambda x: self.guarantee_hierarchical_path(x))
-            print(f'{df["labels"].str.len().sum()- nof_labels} labels are added to the already existing {nof_labels} to match the hierarchical structure.')
-
+            #print(f'{df["labels"].str.len().sum()- nof_labels} labels are added to the already existing {nof_labels} to match the hierarchical structure.')
 
         # Split data and encode labels
         X_train, X_test, Y_train, Y_test = self.split_data(df, get_val = False)
@@ -279,10 +286,9 @@ class LogRegPreprocessor(Preprocessor):
         vectorizer = BowVectorizer()
         X_train = vectorizer.fit_transform(X_train) 
         X_test = vectorizer.transform(X_test)
-
         dataset_dict = {"X_train": X_train, "X_test": X_test, "Y_train": Y_train, "Y_test": Y_test}
-
         self.store_data(dataset_dict)
+
         return X_train, X_test, Y_train, Y_test
 
 
@@ -316,34 +322,35 @@ class BERTPreprocessor(Preprocessor):
         # Load SCB classifications and retrieve unique label for data
         df_classifications = self.load_classifications()
         df['labels'] = df['labels'].apply(lambda x: self.get_matching_SCB_class_IDs(x, df_classifications))
-
         # Filter labels depending on chosen level of classification (in config)
         if self.select_level_of_classification:
             df['labels'] = df['labels'].apply(lambda x: self.filter_IDs(x)) 
 
-        nof_labels = df['labels'].str.len().sum()
+        
+
         # Add parenting label nodes to match hiearchical structure
         if self.args.add_parent_nodes:
+            nof_labels = df['labels'].str.len().sum()
             df['labels'] = df['labels'].apply(lambda x: self.guarantee_hierarchical_path(x))
-            print(f'{df["labels"].str.len().sum()- nof_labels} labels are added to the already existing {nof_labels} to match the hierarchical structure.')
+            # print(f'{df["labels"].str.len().sum()- nof_labels} labels are added to the already existing {nof_labels} to match the hierarchical structure.')
+       
 
         if self.split_val:
             # Split data and encode labels
             X_train, X_test, X_val, Y_train, Y_test, Y_val = self.split_data(df, get_val = True)
             Y_train, Y_test, Y_val = self.prepare_targets(Y_train, Y_test, Y_val)
-
             dataset_dict = {"X_train": X_train, "X_test": X_test, "X_val": X_val,"Y_train": Y_train, "Y_test": Y_test, "Y_val": Y_val}
-
             self.store_data(dataset_dict)
+
             return X_train, X_test, X_val, Y_train, Y_test, Y_val
         
         else:
             # Split data and encode labels
             X_train, X_test,  Y_train, Y_test = self.split_data(df, get_val = False)
             Y_train, Y_test, _= self.prepare_targets(Y_train, Y_test)
-
             dataset_dict = {"X_train": X_train, "X_test": X_test, "Y_train": Y_train, "Y_test": Y_test}
             self.store_data(dataset_dict)
+
             return X_train, X_test, Y_train, Y_test
 
   

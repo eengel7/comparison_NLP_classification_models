@@ -20,7 +20,7 @@ class DataArgs():
     raw_classifications_SCB: str = 'data/raw_data/SCB_classifications.xlsx' # SCB based classifications
     
     preprocessed_path: str = 'data/preprocessed/'
-    language: str ='en'   # 'En' or 'Sv'
+    language: str ='en'   # 'en' or 'sv'
     test_size: int= 0.2
     validation_size: int = 0.2   # fraction used from training 
     add_parent_nodes: bool = True
@@ -28,6 +28,8 @@ class DataArgs():
     # Logistic regression
     remove_stopwords: bool = True
     apply_stemming: bool = True
+    min_words: int = 20
+    random_seed: int = 42
     
     # SCB classifications 
     digits: int =  5   # Options: 1, 3,5        Number of digits indicating the level of classification

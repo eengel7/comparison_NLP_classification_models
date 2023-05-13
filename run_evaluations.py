@@ -27,37 +27,28 @@ model_type = 'bert'
 model_name = "bert-base-uncased" # 'bert-base-uncased' ,"roberta-base", "outputs/checkpoint-120-epoch-1",
 
 model_args = MultiLabelClassificationArgs(
-                                          wandb_project ='multi_label_transformer', 
+                                          wandb_project ='multi-label-42_predictions', 
                                           wandb_kwargs = {"name": model_name},
                                           learning_rate = 5e-5,
-                                          num_train_epochs=15,
+                                          num_train_epochs=10,
                                           train_batch_size = 4,
                                           eval_batch_size = 4,
+                                          evaluate_during_training= True, 
+                                          use_multiprocessing= True,
+                                          use_early_stopping= True,
+                                          early_stopping_patience=3,
+                                          early_stopping_delta= 1e-5
                                           ) 
 model = MultiLabelClassificationModel(
     model_type,
-    model_name,
+    'best_model',
     num_labels=305,
-    args=model_args,
+    args=model_args
 )
 # -----------------------------------
 # Prepare data
-X_train, X_test, X_val, Y_train, Y_test, Y_val = get_preprocessed_data(model_type, overwrite_data= True)
-
-train_df = prepare_df(X_train, Y_train)
-test_df = prepare_df(X_test, Y_test)
-val_df = prepare_df(X_val, Y_val)
-print('Data is loaded.')
-
-train_model(model, train_df, eval_df = val_df)
-
+X_train, X_test, X_val, Y_train, Y_test, Y_val = get_preprocessed_data('bert', overwrite_data= True)
+# test_df = prepare_df(X_test, Y_test)
 # # Evaluate the model
-# result, model_outputs, wrong_predictions = eval_model(model,
-#     test
+# result, model_outputs, wrong_predictions = eval_model(model, eval_df=test_df.head(10)
 # )
-
-#print(result, model_outputs, wrong_predictions)
-# # Make predictions with the model
-# predictions, raw_outputs = model.predict(["Sam"])
-
-# print(predictions,raw_outputs)
