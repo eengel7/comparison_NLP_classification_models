@@ -32,11 +32,12 @@ class Preprocessor(ABC):
             tokenizer_type: The type of tokenizer (auto, bert, xlnet, xlm, roberta, distilbert, etc.) to use. If a string is passed, Simple Transformers will try to initialize a tokenizer class from the available MODEL_CLASSES.
                                 Alternatively, a Tokenizer class (subclassed from PreTrainedTokenizer) can be passed.
         """
-        # self.args = self._load_model_args(model_type), TODO: check or just delete this part
         self.args = DataArgs()
 
         if isinstance(args, dict):
             self.args.update_from_dict(args)
+        elif isinstance(args, DataArgs):
+            self.args = args
 
         self.model_type = model_type
         self.overwrite_data = overwrite_data
