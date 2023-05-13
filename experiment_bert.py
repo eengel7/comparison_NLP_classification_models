@@ -23,7 +23,7 @@ for random_seed in [40,41,42,43,44]:
 
     # Prepare data
     data_args = DataArgs(random_seed = random_seed)
-    X_train, X_test, X_val, Y_train, Y_test, Y_val = get_preprocessed_data(model_type, overwrite_data= False, args = data_args)
+    X_train, X_test, X_val, Y_train, Y_test, Y_val = get_preprocessed_data(model_type, overwrite_data= True, args = data_args)
     train_df = prepare_df(X_train, Y_train)
     val_df = prepare_df(X_val, Y_val)
     test_df = prepare_df(X_test, Y_test)
