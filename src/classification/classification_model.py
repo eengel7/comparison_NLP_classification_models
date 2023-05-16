@@ -385,7 +385,7 @@ class ClassificationModel:
     
     def get_infer_flops_multi_label(self):
 
-        hparams = TransformerHparams(h = self.config.hidden_size, 
+        hparams = TransformerHparams(h = self.config.hidden_size,
                             l = self.config.num_hidden_layers,
                             s = self.args.max_seq_length,
                             num_labels= self.num_labels,
