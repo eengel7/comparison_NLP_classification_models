@@ -133,7 +133,7 @@ def preprocess_data_multiprocessing(data):
 
     return examples
 
-def preprocess_data(text_a, text_b, tokenizer, max_seq_length):
+def preprocess_data(text_a, text_b, labels, tokenizer, max_seq_length):
     return tokenizer(
         text=text_a,
         text_pair=text_b,
@@ -220,7 +220,7 @@ def build_classification_dataset(
             }
         else:
             examples = preprocess_data(
-                text_a, text_b, tokenizer, args.max_seq_length
+                text_a, text_b, labels, tokenizer, args.max_seq_length
             )
 
         if output_mode == "classification":
@@ -257,6 +257,7 @@ def map_labels_to_numeric(example, multi_label, args):
         example["labels"] = [args.labels_map[label] for label in example["labels"]]
     else:
         example["labels"] = args.labels_map[example["labels"]]
+
     return example
 
 def convert_example_to_feature(

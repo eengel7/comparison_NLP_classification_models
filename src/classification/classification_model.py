@@ -9,10 +9,10 @@ import random
 import tempfile
 import warnings
 from pathlib import Path
+from src.computing_flops import TransformerHparams
 
 from scipy.stats import mode
 from tqdm.auto import tqdm
-from src.computing_flops import TransformerHparams
 from src.utils import calculate_loss
 import numpy as np
 import torch
@@ -353,6 +353,10 @@ class ClassificationModel:
 
         Utility function for train() and eval() methods. Not intended to be used directly.
         """
+
+        process_count = self.args.process_count
+
+        tokenizer = self.tokenizer
         args = self.args
 
         if not no_cache:
@@ -382,10 +386,10 @@ class ClassificationModel:
     def get_infer_flops_multi_label(self):
 
         hparams = TransformerHparams(h = self.config.hidden_size, 
-                           l = self.config.num_hidden_layers, 
-                           s = self.args.max_seq_length, 
-                           num_labels= self.num_labels,
-                           )
+                            l = self.config.num_hidden_layers,
+                            s = self.args.max_seq_length,
+                            num_labels= self.num_labels,
+                            )
         
         infer_flops = hparams.get_infer_flops_multi_label()
 
