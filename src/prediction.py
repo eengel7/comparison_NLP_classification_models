@@ -68,7 +68,6 @@ def predict(classification_model, to_predict, multi_label=False):
         eval_dataloader = DataLoader(
             eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size
         )
-        flops = 0
 
         n_batches = len(eval_dataloader)
         for i, batch in enumerate(tqdm(eval_dataloader, disable=args.silent)):
@@ -86,7 +85,6 @@ def predict(classification_model, to_predict, multi_label=False):
                     device=classification_model.device,
                 )
                 tmp_eval_loss, logits = outputs[:2]
-
 
                 #flops += ModuleUtilsMixin.floating_point_ops(inputs) 
                 if multi_label:
@@ -139,6 +137,5 @@ def predict(classification_model, to_predict, multi_label=False):
                 value: key for key, value in classification_model.args.labels_map.items()
             }
             preds = [inverse_labels_map[pred] for pred in preds]
-        print(f'Number of FLOPs: {flops}')
 
         return preds, model_outputs

@@ -140,8 +140,9 @@ class TransformerHparams(object):
 
 MODEL_FLOPS = collections.OrderedDict([
     ("bert_small", TransformerHparams(256, 12, e=128, s=128).get_infer_flops_multi_label()),
-    ("bert_base", TransformerHparams(768, 12).get_infer_flops_multi_label()),
-    ("bert_large", TransformerHparams(1024, 24).get_infer_flops_multi_label()),
+    ("bert_base", TransformerHparams(768, 12, s = 512 ).get_infer_flops_multi_label()),
+    ("bert_base_128", TransformerHparams(768, 12, s = 128).get_infer_flops_multi_label()),
+    ("distilbert", TransformerHparams(768, 6, s = 512 ).get_infer_flops_multi_label()),
     # RoBERTa, ALBERT, and T5 have  minor architectural differences from
     # BERT/ELECTRA, but I believe they don't significantly effect the runtime,
     # so we use this script for those models as well.
@@ -150,8 +151,12 @@ MODEL_FLOPS = collections.OrderedDict([
 
 
 def main():
-  for k, v in MODEL_FLOPS.items():
-    print(k, v)
+    for k, v in MODEL_FLOPS.items():
+        print(k, v)
+    
+    vocab_size = 30000
+    print(f'logistic regression with vocab size {vocab_size}: {305*(305+ 2*vocab_size)}')
+
 
 
 if __name__ == "__main__":
