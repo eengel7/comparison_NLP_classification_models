@@ -24,7 +24,7 @@ if __name__ == "__main__":
         print('----------------------------------------Random seed:',{random_seed})
 
         name_run = f'{model_name}_{random_seed}'
-        wandb_project = f'multi-label-{model_name}'
+        wandb_project = f'multi-label-{model_name}_128'
         wandb_kwargs = {"name": name_run}
 
         # Prepare data
@@ -47,7 +47,8 @@ if __name__ == "__main__":
                                                 use_multiprocessing= False,
                                                 use_early_stopping= True,
                                                 early_stopping_patience=3,
-                                                early_stopping_delta= 0
+                                                early_stopping_delta= 0,
+                                                max_seq_length=128
                                                 ) 
 
         model = MultiLabelClassificationModel( 

@@ -1,6 +1,5 @@
 import logging
 
-import wandb
 from config.data_args import DataArgs
 from src.classification import (MultiLabelClassificationArgs,
                                 MultiLabelClassificationModel)
@@ -12,33 +11,34 @@ from src.utils import prepare_df
 logging.basicConfig(level=logging.INFO)
 transformers_logger = logging.getLogger("transformers")
 transformers_logger.setLevel(logging.WARNING)
+import wandb
 wandb.login()
 
 if __name__ == "__main__":
 
-    # Experiment config:----------------------
-    model_type = 'bert'
-    model_name = "bert-base-uncased" 
 
-    for random_seed in [45,46]:
+    # Experiment config:----------------------
+    model_type = 'auto'
+    model_name = "allenai/scibert_scivocab_uncased" 
+
+    for random_seed in [43,44]:
         print('----------------------------------------Random seed:',{random_seed})
 
-        name_run = f'{model_name}_{random_seed}'
-        wandb_project = f'multi-label-{model_name}'
-        wandb_kwargs = {"name": name_run}
-
+    # for random_seed in [40,41,42,43,44]:
         # Prepare data
         data_args = DataArgs(random_seed = random_seed)
-        X_train, X_test, X_val, Y_train, Y_test, Y_val = get_preprocessed_data(model_type, overwrite_data= False, random_seed= random_seed)
+        X_train, X_test, X_val, Y_train, Y_test, Y_val = get_preprocessed_data(model_type, overwrite_data= False)
         train_df = prepare_df(X_train, Y_train)
         val_df = prepare_df(X_val, Y_val)
         test_df = prepare_df(X_test, Y_test)
 
+
         # Initialise the model
+        name_project = f'{model_name}_{random_seed}'
         model_args = MultiLabelClassificationArgs(
-                                                wandb_project = wandb_project, 
+                                                wandb_project ='multi-label-DistilBERT', 
                                                 manual_seed = random_seed,
-                                                wandb_kwargs = wandb_kwargs,
+                                                wandb_kwargs = {"name": name_project},
                                                 learning_rate = 5e-5,
                                                 num_train_epochs=15,
                                                 train_batch_size = 4,
@@ -55,7 +55,7 @@ if __name__ == "__main__":
             model_name,
             num_labels=305,
             args=model_args,
-            use_cuda = True
+            use_cuda = False
         )
 
         # Training
@@ -66,31 +66,4 @@ if __name__ == "__main__":
         result, model_outputs, wrong_predictions = eval_model(model,
             test_df
         )
-
-        # Add data and prediction to wandb 
-        run = wandb.init(
-                        project=wandb_project,
-                        job_type="split-dataset",
-                        name = name_run,
-                        resume=True
-
-        )
-        # log the data as an artifact
-        data_artifact = wandb.Artifact("data", "dataset")
-        data_artifact.add_file(f"data/preprocessed/transformer_en_all_levels_val_{random_seed}/preprocessed_data.pkl")
-        run.log_artifact(data_artifact)
-        
-
-        # log the data config as an artifact
-        config_artifact = wandb.Artifact("config", type="config")
-        config_artifact.add_file(f"data/preprocessed/transformer_en_all_levels_val_{random_seed}/data_args.json")
-        run.log_artifact(config_artifact)
-
-        # Log the predictions
-        run.log({"test_predictions": str(model_outputs.tolist())})
-
-        # Log the metrics
-        run.log({"test_LRAP": result["LRAP"], "test_f1_score_avg": result["f1_score_avg"], "test_f1_score_macro": result["f1_score_macro"], "test_f1_score_micro": result["f1_score_micro"]})
-
-        # finish logging the data logging run
-        run.finish()
+        print(result)
