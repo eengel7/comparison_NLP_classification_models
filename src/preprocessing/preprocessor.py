@@ -18,6 +18,7 @@ class Preprocessor(ABC):
         self,
         model_type: str,
         overwrite_data: bool = True,
+        random_seed: int = None,
         select_level_of_classification: bool = False,
         args = None,
         language: str = None,
@@ -43,10 +44,14 @@ class Preprocessor(ABC):
         self.overwrite_data = overwrite_data
         self.select_level_of_classification = select_level_of_classification
         
-        if isinstance(self.args.random_seed, int):
+        if isinstance(random_seed, int):
+            self.random_seed = random_seed
+        elif isinstance(self.args.random_seed, int):
             self.random_seed = self.args.random_seed
-            random.seed(self.random_seed)
-            np.random.seed(self.random_seed)
+        random.seed(self.random_seed)
+        np.random.seed(self.random_seed)
+
+        
 
         if language:
             self.language = language
@@ -65,7 +70,10 @@ class Preprocessor(ABC):
             info = 'all_levels'
 
         self.file_name = 'preprocessed_data.pkl'
-        dir_name = f"{model_type}_{self.language}_{info}{split_info}"
+        if model_type == 'logistic_regression':
+            dir_name = f"logistic_regression_{self.language}_{info}{split_info}_{self.random_seed}"
+        else:
+            dir_name = f"transformer_{self.language}_{info}{split_info}_{self.random_seed}"
         self.dest_name = self.args.preprocessed_path + dir_name
         self.binarizer_name = f"binarizer_{info}.joblib"
 
@@ -249,9 +257,14 @@ class LogRegPreprocessor(Preprocessor):
             file = os.path.join(self.dest_name, self.file_name) 
             with open(file, 'rb') as file:
                 dataset_dict = pickle.load(file)
-            X_train, X_test, Y_train, Y_test = dataset_dict["X_train"], dataset_dict["X_test"], dataset_dict["Y_train"], dataset_dict["Y_test"]
             
-            return X_train, X_test, Y_train, Y_test
+            if self.split_val:
+                X_train, X_test, X_val, Y_train, Y_test, Y_val = dataset_dict["X_train"], dataset_dict["X_test"], dataset_dict["X_val"] ,dataset_dict["Y_train"], dataset_dict["Y_test"], dataset_dict["Y_val"]
+                return X_train, X_test, X_val, Y_train, Y_test, Y_val
+            
+            else:
+                X_train, X_test, Y_train, Y_test = dataset_dict["X_train"], dataset_dict["X_test"], dataset_dict["Y_train"], dataset_dict["Y_test"]
+                return X_train, X_test, Y_train, Y_test
         
         # Check whether data already exists
         elif self.data_exists() and self.overwrite_data:
@@ -278,22 +291,39 @@ class LogRegPreprocessor(Preprocessor):
             df['labels'] = df['labels'].apply(lambda x: self.guarantee_hierarchical_path(x))
             #print(f'{df["labels"].str.len().sum()- nof_labels} labels are added to the already existing {nof_labels} to match the hierarchical structure.')
 
-        # Split data and encode labels
-        X_train, X_test, Y_train, Y_test = self.split_data(df, get_val = False)
-        Y_train, Y_test, _ = self.prepare_targets(Y_train, Y_test)
- 
+        if self.split_val:
+            # Split data and encode labels
+            X_train, X_test, X_val, Y_train, Y_test, Y_val = self.split_data(df, get_val = True)
+            Y_train, Y_test, Y_val = self.prepare_targets(Y_train, Y_test, Y_val)
 
-        # Vectorize tokens based on BOW embedding 
-        vectorizer = BowVectorizer()
-        X_train = vectorizer.fit_transform(X_train) 
-        X_test = vectorizer.transform(X_test)
-        dataset_dict = {"X_train": X_train, "X_test": X_test, "Y_train": Y_train, "Y_test": Y_test}
-        self.store_data(dataset_dict)
+            # Vectorize tokens based on BOW embedding 
+            vectorizer = BowVectorizer(self.args)
+            X_train = vectorizer.fit_transform(X_train) 
+            X_val = vectorizer.transform(X_val)
+            X_test = vectorizer.transform(X_test)
 
-        return X_train, X_test, Y_train, Y_test
+            dataset_dict = {"X_train": X_train, "X_test": X_test, "X_val": X_val,"Y_train": Y_train, "Y_test": Y_test, "Y_val": Y_val}
+            self.store_data(dataset_dict)
+
+            return X_train, X_test, X_val, Y_train, Y_test, Y_val
+        
+        else:
+            # Split data and encode labels
+            X_train, X_test,  Y_train, Y_test = self.split_data(df, get_val = False)
+            Y_train, Y_test, _= self.prepare_targets(Y_train, Y_test)
+             # Vectorize tokens based on BOW embedding 
+            vectorizer = BowVectorizer(self.args)
+            X_train = vectorizer.fit_transform(X_train) 
+            X_test = vectorizer.transform(X_test)
+
+            dataset_dict = {"X_train": X_train, "X_test": X_test, "Y_train": Y_train, "Y_test": Y_test}
+            self.store_data(dataset_dict)
+
+            return X_train, X_test, Y_train, Y_test
+        
 
 
-class BERTPreprocessor(Preprocessor):
+class TransformerPreprocessor(Preprocessor):
     
     def get_preprocessed_data(self):
 

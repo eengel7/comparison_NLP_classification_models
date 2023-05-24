@@ -1,4 +1,3 @@
-
 from abc import ABC, abstractmethod
 
 import pandas as pd
@@ -15,11 +14,11 @@ class Vectorizer(ABC):
 
 
 class BowVectorizer(Vectorizer):
-    def __init__(self):
-        self.count_vect = CountVectorizer(ngram_range=(1,2)) 
+    def __init__(self, args):
+        self.args = args
+        self.count_vect = CountVectorizer(ngram_range=(1,2), max_features = self.args.max_feaures) 
     
     def fit_transform(self, df: pd.DataFrame) -> pd.DataFrame:
-
         word_embs = self.count_vect.fit_transform(df) 
         return word_embs
 

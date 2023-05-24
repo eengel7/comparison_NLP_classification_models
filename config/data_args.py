@@ -30,6 +30,7 @@ class DataArgs():
     apply_stemming: bool = True
     min_words: int = 20
     random_seed: int = 42
+    max_feaures: int = 10000
     
     # SCB classifications 
     digits: int =  5   # Options: 1, 3,5        Number of digits indicating the level of classification
