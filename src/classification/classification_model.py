@@ -211,8 +211,8 @@ class ClassificationModel:
             ),
             "xlnet": (XLNetConfig, XLNetForSequenceClassification, XLNetTokenizerFast),
         }
-
-        self.args = self._load_model_args(model_name)
+        self.model_name = model_name
+        self.args = self._load_model_args(self.model_name)
 
         if isinstance(args, dict):
             self.args.update_from_dict(args)

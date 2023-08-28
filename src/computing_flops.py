@@ -111,11 +111,16 @@ class TransformerHparams(object):
         )
         return sum(classification_flops.values()) * self.s 
     
-    def get_infer_flops_multi_label(self):
+    def get_infer_flops_multi_label(self, include_embedding = True):
         """Get the FLOPs for running inference with the transformer on a multi-label
         classification task."""
+        if include_embedding:
+            embedding_flops = self.get_embedding_flops(output=False)
+        else:
+            embedding_flops = 0 
+
         return ((self.l * self.get_block_flops()) +
-                self.get_embedding_flops(output=False) +
+                embedding_flops + 
                 self.get_multi_label_classification_flops())
 
     def get_train_flops(self, batch_size, train_steps, discriminator=False):
@@ -149,14 +154,28 @@ MODEL_FLOPS = collections.OrderedDict([
     ("roberta", TransformerHparams(1024, 24, v=50265).get_infer_flops_multi_label()),
 ])
 
+MODEL_FLOPS_NO_EMBEDDING = collections.OrderedDict([
+    ("bert_small", TransformerHparams(256, 12, e=128, s=128).get_infer_flops_multi_label(include_embedding = False)),
+    ("bert_base", TransformerHparams(768, 12, s = 512 ).get_infer_flops_multi_label(include_embedding = False)),
+    ("bert_base_128", TransformerHparams(768, 12, s = 128).get_infer_flops_multi_label(include_embedding = False)),
+    ("distilbert", TransformerHparams(768, 6, s = 512 ).get_infer_flops_multi_label(include_embedding = False)),
+    # RoBERTa, ALBERT, and T5 have  minor architectural differences from
+    # BERT/ELECTRA, but I believe they don't significantly effect the runtime,
+    # so we use this script for those models as well.
+    ("roberta", TransformerHparams(1024, 24, v=50265).get_infer_flops_multi_label(include_embedding = False)),
+])
 
 def main():
     for k, v in MODEL_FLOPS.items():
         print(k, v)
-    
-    vocab_size = 30000
-    print(f'logistic regression with vocab size {vocab_size}: {305*(305+ 2*vocab_size)}')
 
+    print('WITHOUT EMBEDDING:')
+
+    for k, v in MODEL_FLOPS_NO_EMBEDDING.items():
+        print(k, v)
+    
+    vocab_size = 10000
+    print(f'logistic regression with vocab size {vocab_size}: {305*(305+ 2*vocab_size)}')
 
 
 if __name__ == "__main__":

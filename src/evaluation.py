@@ -344,7 +344,22 @@ def compute_metrics(
             f1_score_macro = metrics.f1_score(labels, preds_thresholded, average='macro', zero_division=0)
             f1_score_micro = metrics.f1_score(labels, preds_thresholded, average='micro', zero_division=0)
 
-            return {**{"LRAP": label_ranking_score, "f1_score_avg": f1_score_avg, "f1_score_macro": f1_score_macro, "f1_score_micro": f1_score_micro }, **extra_metrics}, wrong
+            f1_score_avg_1 = metrics.f1_score(labels, preds_thresholded, labels = range(6), average='samples', zero_division=0)
+            f1_score_avg_3 = metrics.f1_score(labels, preds_thresholded, labels = range(6,42), average='samples', zero_division=0)
+            f1_score_avg_5 = metrics.f1_score(labels, preds_thresholded, labels = range(42,260), average='samples', zero_division=0)
+
+
+
+
+
+            return {**{"LRAP": label_ranking_score, 
+                       "f1_score_avg": f1_score_avg, 
+                       "f1_score_macro": f1_score_macro, 
+                       "f1_score_micro": f1_score_micro,
+                       "f1_score_avg_1": f1_score_avg_1, 
+                       "f1_score_avg_3": f1_score_avg_3, 
+                       "f1_score_avg_5": f1_score_avg_5, 
+                       }, **extra_metrics}, wrong
         elif classification_model.args.regression:
             return {**extra_metrics}, wrong
 

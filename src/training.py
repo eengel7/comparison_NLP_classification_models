@@ -770,6 +770,9 @@ def _create_training_progress_scores(classification_model, multi_label, **kwargs
             "f1_score_avg": [],  
             "f1_score_macro": [], 
             "f1_score_micro": [], 
+            "f1_score_avg_1": [], 
+            "f1_score_avg_3": [], 
+            "f1_score_avg_5": [], 
             **extra_metrics,
         }
     else:

@@ -12,6 +12,7 @@ logging.basicConfig(level=logging.INFO)
 transformers_logger = logging.getLogger("transformers")
 transformers_logger.setLevel(logging.WARNING)
 import wandb
+
 wandb.login()
 
 if __name__ == "__main__":
@@ -20,7 +21,7 @@ if __name__ == "__main__":
     model_type = 'distilbert'
     model_name = "distilbert-base-uncased" 
 
-    for random_seed in [45,46]:
+    for random_seed in [42,43,44,45,46]:
         print('----------------------------------------Random seed:',{random_seed})
 
         name_run = f'{model_name}_{random_seed}'
@@ -90,7 +91,14 @@ if __name__ == "__main__":
         run.log({"test_predictions": str(model_outputs.tolist())})
 
         # Log the metrics
-        run.log({"test_LRAP": result["LRAP"], "test_f1_score_avg": result["f1_score_avg"], "test_f1_score_macro": result["f1_score_macro"], "test_f1_score_micro": result["f1_score_micro"]})
+        run.log({"test_LRAP": result["LRAP"], 
+                 "test_f1_score_avg": result["f1_score_avg"], 
+                 "test_f1_score_macro": result["f1_score_macro"], 
+                 "test_f1_score_micro": result["f1_score_micro"],
+                "test_f1_score_avg_1": result["f1_score_avg_1"],
+                "test_f1_score_avg_3": result["f1_score_avg_3"],
+                "test_f1_score_avg_5": result["f1_score_avg_5"],
+                 })
 
         # finish logging the data logging run
         run.finish()

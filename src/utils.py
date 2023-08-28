@@ -29,3 +29,6 @@ def prepare_df(features: pd.Series, targets: np.ndarray):
     df = pd.DataFrame(features)
     df['labels'] = targets.values
     return df
+
+# def get_labels_from_classification_level(level_nof_digits: int) -> list[int]:
+

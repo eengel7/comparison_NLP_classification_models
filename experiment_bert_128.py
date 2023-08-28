@@ -1,6 +1,5 @@
 import logging
 
-import wandb
 from config.data_args import DataArgs
 from src.classification import (MultiLabelClassificationArgs,
                                 MultiLabelClassificationModel)
@@ -12,6 +11,8 @@ from src.utils import prepare_df
 logging.basicConfig(level=logging.INFO)
 transformers_logger = logging.getLogger("transformers")
 transformers_logger.setLevel(logging.WARNING)
+import wandb
+
 wandb.login()
 
 if __name__ == "__main__":
@@ -20,10 +21,10 @@ if __name__ == "__main__":
     model_type = 'bert'
     model_name = "bert-base-uncased" 
 
-    for random_seed in [45,46]:
+    for random_seed in [44,45,46]:
         print('----------------------------------------Random seed:',{random_seed})
 
-        name_run = f'{model_name}_{random_seed}'
+        name_run = f'{model_name}_128_{random_seed}'
         wandb_project = f'multi-label-{model_name}_128'
         wandb_kwargs = {"name": name_run}
 
@@ -40,15 +41,16 @@ if __name__ == "__main__":
                                                 manual_seed = random_seed,
                                                 wandb_kwargs = wandb_kwargs,
                                                 learning_rate = 5e-5,
-                                                num_train_epochs=15,
+                                                num_train_epochs = 15,
                                                 train_batch_size = 4,
                                                 eval_batch_size = 4,
                                                 evaluate_during_training= True, 
-                                                use_multiprocessing= False,
-                                                use_early_stopping= True,
-                                                early_stopping_patience=3,
+                                                use_multiprocessing = False,
+                                                use_early_stopping = True,
+                                                early_stopping_patience = 3,
                                                 early_stopping_delta= 0,
-                                                max_seq_length=128
+                                                output_dir = f"outputs/{name_run}/",
+                                                max_seq_length= 128
                                                 ) 
 
         model = MultiLabelClassificationModel( 
@@ -58,7 +60,7 @@ if __name__ == "__main__":
             args=model_args,
             use_cuda = True
         )
-
+        print("The number of FLOPs for inference is:", {model.get_infer_flops_multi_label()})
         # Training
         print('Training starts.')
         train_model(model, train_df, eval_df = val_df)
@@ -80,7 +82,6 @@ if __name__ == "__main__":
         data_artifact = wandb.Artifact("data", "dataset")
         data_artifact.add_file(f"data/preprocessed/transformer_en_all_levels_val_{random_seed}/preprocessed_data.pkl")
         run.log_artifact(data_artifact)
-        
 
         # log the data config as an artifact
         config_artifact = wandb.Artifact("config", type="config")
@@ -91,7 +92,14 @@ if __name__ == "__main__":
         run.log({"test_predictions": str(model_outputs.tolist())})
 
         # Log the metrics
-        run.log({"test_LRAP": result["LRAP"], "test_f1_score_avg": result["f1_score_avg"], "test_f1_score_macro": result["f1_score_macro"], "test_f1_score_micro": result["f1_score_micro"]})
+        run.log({"test_LRAP": result["LRAP"], 
+                 "test_f1_score_avg": result["f1_score_avg"], 
+                 "test_f1_score_macro": result["f1_score_macro"], 
+                 "test_f1_score_micro": result["f1_score_micro"],
+                "test_f1_score_avg_1": result["f1_score_avg_1"],
+                "test_f1_score_avg_3": result["f1_score_avg_3"],
+                "test_f1_score_avg_5": result["f1_score_avg_5"],
+                 })
 
         # finish logging the data logging run
         run.finish()
